@@ -28,7 +28,7 @@ PHP);
         Storage::disk()->deleteDirectory('postman');
     }
 
-    public function test_cached_export_works()
+    public function test_cached_export_works(): void
     {
         $this->markTestSkipped('Vendor routes are included in the cached routes, so this test fails');
 
@@ -38,23 +38,19 @@ PHP);
 
         $this->artisan('export:postman')->assertExitCode(0);
 
-        $collection = json_decode(Storage::get('postman/'.config('api-postman.filename')), true);
+        $collection = json_decode(Storage::get('postman/' . config('api-postman.filename')), true);
 
         $routes = $this->app['router']->getRoutes()->getRoutesByName();
 
         // Filter out workbench routes from orchestra/workbench
-        $routes = array_filter($routes, function ($route) {
-            return strpos($route->uri(), 'workbench') === false;
-        });
+        $routes = array_filter($routes, fn($route) => ! str_contains($route->uri(), 'workbench'));
 
         $collectionItems = $collection['item'];
 
         $this->assertCount(count($routes), $collectionItems);
 
         foreach ($routes as $route) {
-            $collectionRoute = Arr::first($collectionItems, function ($item) use ($route) {
-                return $item['name'] == $route->uri();
-            });
+            $collectionRoute = Arr::first($collectionItems, fn($item) => $item['name'] === $route->uri());
             $this->assertNotNull($collectionRoute);
             $this->assertTrue(in_array($collectionRoute['request']['method'], $route->methods()));
         }

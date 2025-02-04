@@ -23,7 +23,7 @@ composer require andreaselia/laravel-api-to-postman
 Publish the config file:
 
 ```bash
-php artisan vendor:publish --provider="AndreasElia\PostmanGenerator\PostmanGeneratorServiceProvider"
+php artisan vendor:publish --provider="AndreasElia\PostmanGenerator\CollectionGeneratorServiceProvider"
 ```
 
 ## Configuration
@@ -39,13 +39,13 @@ The output of the command being ran is your storage/app directory.
 To use the command simply run:
 
 ```bash
-php artisan export:postman
+php artisan export:collection
 ```
 
 The following usage will generate routes with the bearer token specified.
 
 ```bash
-php artisan export:postman --bearer="1|XXNKXXqJjfzG8XXSvXX1Q4pxxnkXmp8tT8TXXKXX"
+php artisan export:collection --bearer="1|XXNKXXqJjfzG8XXSvXX1Q4pxxnkXmp8tT8TXXKXX"
 ```
 
 The following usage will generate routes with the basic auth specified.
@@ -61,7 +61,7 @@ If both auths are specified, bearer will be favored.
 This is with the default configuration and a bearer token passed in:
 
 ```bash
-php artisan export:postman --bearer=123456789
+php artisan export:collection --bearer=123456789
 ```
 
 - [Example routes](/examples/api.php)

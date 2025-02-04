@@ -40,7 +40,7 @@ class FormDataProcessor
 
                 if (is_array($rule) && in_array('confirmed', $rule)) {
                     $rules->push([
-                        'name' => $fieldName.'_confirmation',
+                        'name' => $fieldName . '_confirmation',
                         'description' => $printRules ? $rule : '',
                     ]);
                 }

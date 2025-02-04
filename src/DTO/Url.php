@@ -7,17 +7,17 @@ use AndreasElia\PostmanGenerator\Enums\Method;
 use AndreasElia\PostmanGenerator\Formatters\RuleFormatter;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Str;
+use JsonSerializable;
 
-final readonly class Url implements \JsonSerializable
+final readonly class Url implements JsonSerializable
 {
     public function __construct(
         public string $raw,
         public array $host,
         public array $path,
         public array $variable = [],
-        public array $query = []
-    ) {
-    }
+        public array $query = [],
+    ) {}
 
     public static function fromRoute(Route $route, Method $method, ParameterCollection $formParameters): Url
     {
@@ -26,31 +26,27 @@ final readonly class Url implements \JsonSerializable
         $data = [
             'raw' => '{{base_url}}/' . $uri,
             'host' => ['{{base_url}}'],
-            'path' => explode('/', trim($uri, '/')),
+            'path' => explode('/', mb_trim($uri, '/')),
         ];
 
         $pathVariables = [];
         preg_match_all('/\{([^}]+)}/', $route->uri(), $matches);
-        if (!empty($matches[1])) {
-            $pathVariables = array_map(function($param) {
-                return [
-                    'key' => $param,
-                    'value' => ''
-                ];
-            }, $matches[1]);
+        if ( ! empty($matches[1])) {
+            $pathVariables = array_map(fn($param) => [
+                'key' => $param,
+                'value' => '',
+            ], $matches[1]);
         }
 
         $data['variable'] = $pathVariables;
 
-        if ($method === Method::GET && !$formParameters->isEmpty()) {
-            $data['query'] = $formParameters->map(function(Parameter $param) {
-                return [
-                    'key' => $param->name,
-                    'value' => $param->value ?? '',
-                    'description' => app(RuleFormatter::class)->format($param->name,  [$param->description]),
-                    'disabled' => false
-                ];
-            })->values()->all();
+        if (Method::GET === $method && ! $formParameters->isEmpty()) {
+            $data['query'] = $formParameters->map(fn(Parameter $param) => [
+                'key' => $param->name,
+                'value' => $param->value ?? '',
+                'description' => app(RuleFormatter::class)->format($param->name, [$param->description]),
+                'disabled' => false,
+            ])->values()->all();
         }
 
         return self::from($data);
@@ -67,7 +63,7 @@ final readonly class Url implements \JsonSerializable
             host: $data['host'],
             path: $data['path'],
             variable: $data['variable'] ?? [],
-            query: $data['query'] ?? []
+            query: $data['query'] ?? [],
         );
     }
 
@@ -78,7 +74,7 @@ final readonly class Url implements \JsonSerializable
             'host' => $this->host,
             'path' => $this->path,
             'variable' => $this->variable,
-            'query' => $this->query
+            'query' => $this->query,
         ];
     }
 

@@ -8,6 +8,6 @@ Route::get('/', HomeController::class)->name('home');
 
 Route::apiResource('posts', 'PostController');
 
-Route::middleware('auth:api')->group(function () {
+Route::middleware('auth:api')->group(function (): void {
     Route::post('/user', UserController::class)->name('user');
 });

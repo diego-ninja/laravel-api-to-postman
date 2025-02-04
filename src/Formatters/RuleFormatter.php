@@ -16,7 +16,7 @@ final readonly class RuleFormatter
 
     public function format(string $attribute, string|array|Rule $rules): string
     {
-        if (!$this->config->get('api-postman.rules_to_human_readable')) {
+        if ( ! $this->config->get('api-postman.rules_to_human_readable')) {
             foreach ($rules as $i => $rule) {
                 if (is_subclass_of($rule, ValidationRule::class)) {
                     unset($rules[$i]);
@@ -51,16 +51,16 @@ final readonly class RuleFormatter
         return '';
     }
 
-    protected function handleEdgeCases(array $messages): array
+    private function handleEdgeCases(array $messages): array
     {
         foreach ($messages as $key => $message) {
-            if ($message === 'validation.nullable') {
+            if ('validation.nullable' === $message) {
                 $messages[$key] = '(Nullable)';
 
                 continue;
             }
 
-            if ($message === 'validation.sometimes') {
+            if ('validation.sometimes' === $message) {
                 $messages[$key] = '(Optional)';
             }
         }
@@ -68,7 +68,7 @@ final readonly class RuleFormatter
         return $messages;
     }
 
-    protected function stringify(object $rule): string
+    private function stringify(object $rule): string
     {
         if ($rule instanceof Rule && method_exists($rule, '__toString')) {
             return (string) $rule;

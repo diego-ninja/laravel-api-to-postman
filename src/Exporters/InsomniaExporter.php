@@ -50,7 +50,7 @@ final class InsomniaExporter extends AbstractExporter
                 [
                     'name' => 'base_url',
                     'value' => $this->config->get('api-postman.base_url'),
-                ]
+                ],
             ],
         ];
 
@@ -74,7 +74,7 @@ final class InsomniaExporter extends AbstractExporter
     protected function processFlatRequests(): array
     {
         return $this->requests
-            ->filter(fn(Request $request) => $request->method->value !== 'HEAD')
+            ->filter(fn(Request $request) => 'HEAD' !== $request->method->value)
             ->map(fn($request) => $this->createRequestResource($request))
             ->values()
             ->all();
@@ -84,7 +84,7 @@ final class InsomniaExporter extends AbstractExporter
     {
         $resources = [];
         $groups = $this->requests
-            ->filter(fn(Request $request) => $request->method->value !== 'HEAD')
+            ->filter(fn(Request $request) => 'HEAD' !== $request->method->value)
             ->groupByPath();
 
         foreach ($groups as $groupName => $groupRequests) {
@@ -132,7 +132,7 @@ final class InsomniaExporter extends AbstractExporter
 
         if ($this->config->get('api-postman.protocol_profile_behavior.disable_body_pruning')) {
             $requestResource['protocolProfileBehavior'] = [
-                'disableBodyPruning' => true
+                'disableBodyPruning' => true,
             ];
         }
 
@@ -142,7 +142,7 @@ final class InsomniaExporter extends AbstractExporter
     protected function formatUrl(Request $request): string
     {
         $baseUrl = '{{ base_url }}';
-        $path = trim($request->uri, '/');
+        $path = mb_trim($request->uri, '/');
 
         // Replace {param} with :param for Insomnia format
         $path = preg_replace('/\{([^}]+)}/', ':$1', $path);
@@ -153,14 +153,12 @@ final class InsomniaExporter extends AbstractExporter
     protected function formatParameters(Request $request): array
     {
         return $request->parameters
-            ->map(function ($parameter) {
-                return [
-                    'name' => $parameter->name,
-                    'value' => $parameter->value,
-                    'description' => $parameter->description,
-                    'disabled' => $parameter->disabled,
-                ];
-            })
+            ->map(fn($parameter) => [
+                'name' => $parameter->name,
+                'value' => $parameter->value,
+                'description' => $parameter->description,
+                'disabled' => $parameter->disabled,
+            ])
             ->values()
             ->all();
     }
@@ -168,19 +166,17 @@ final class InsomniaExporter extends AbstractExporter
     protected function formatHeaders(Request $request): array
     {
         return $request->headers
-            ->map(function ($header) {
-                return [
-                    'name' => $header->key,
-                    'value' => $header->value,
-                ];
-            })
+            ->map(fn($header) => [
+                'name' => $header->key,
+                'value' => $header->value,
+            ])
             ->values()
             ->all();
     }
 
     protected function formatAuthentication(): array
     {
-        if (!$this->authentication) {
+        if ( ! $this->authentication) {
             return ['type' => 'none'];
         }
 
@@ -193,21 +189,19 @@ final class InsomniaExporter extends AbstractExporter
 
     protected function formatBody(Request $request): ?array
     {
-        if (!$request->body) {
+        if ( ! $request->body) {
             return null;
         }
 
         return [
             'mimeType' => 'application/x-www-form-urlencoded',
             'params' => collect($request->body['urlencoded'])
-                ->map(function ($param) {
-                    return [
-                        'name' => $param['key'],
-                        'value' => $param['value'],
-                        'description' => $param['description'] ?? '',
-                        'disabled' => false,
-                    ];
-                })
+                ->map(fn($param) => [
+                    'name' => $param['key'],
+                    'value' => $param['value'],
+                    'description' => $param['description'] ?? '',
+                    'disabled' => false,
+                ])
                 ->values()
                 ->all(),
         ];

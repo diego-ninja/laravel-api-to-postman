@@ -6,16 +6,8 @@ final readonly class Header
 {
     public function __construct(
         public string $key,
-        public string $value
+        public string $value,
     ) {}
-
-    public function array(): array
-    {
-        return [
-            'key' => $this->key,
-            'value' => $this->value
-        ];
-    }
 
     public static function from(string|array $headers): Header
     {
@@ -25,7 +17,15 @@ final readonly class Header
 
         return new self(
             key: $headers['key'],
-            value: $headers['value']
+            value: $headers['value'],
         );
+    }
+
+    public function array(): array
+    {
+        return [
+            'key' => $this->key,
+            'value' => $this->value,
+        ];
     }
 }

@@ -18,7 +18,7 @@ final readonly class Request implements JsonSerializable
         public ParameterCollection $parameters,
         public Url $url,
         public ?array $authentication,
-        public ?array $body
+        public ?array $body,
     ) {}
 
     public static function from(string|array $data): Request
@@ -36,7 +36,7 @@ final readonly class Request implements JsonSerializable
             parameters: ParameterCollection::from($data['parameters']),
             url: Url::from($data['url']),
             authentication: $data['authentication'] ?? null,
-            body: $data['body'] ?? null
+            body: $data['body'] ?? null,
         );
     }
 
@@ -51,7 +51,7 @@ final readonly class Request implements JsonSerializable
             'parameters' => $this->parameters,
             'url' => $this->url->array(),
             'authentication' => $this->authentication,
-            'body' => $this->body
+            'body' => $this->body,
         ];
     }
 

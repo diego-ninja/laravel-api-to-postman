@@ -18,8 +18,8 @@ class DocBlockProcessor
     public function __invoke(ReflectionMethod|ReflectionFunction $reflectionMethod): string
     {
         try {
-            $lexer = new Lexer;
-            $constExprParser = new ConstExprParser;
+            $lexer = new Lexer();
+            $constExprParser = new ConstExprParser();
             $parser = new PhpDocParser(new TypeParser($constExprParser), $constExprParser);
 
             $description = '';
@@ -29,7 +29,7 @@ class DocBlockProcessor
 
             foreach ($phpDocNode->children as $child) {
                 if ($child instanceof PhpDocTextNode) {
-                    $description .= ' '.$child->text;
+                    $description .= ' ' . $child->text;
                 }
             }
 

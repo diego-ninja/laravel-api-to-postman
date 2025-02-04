@@ -42,8 +42,8 @@ final class PostmanExporter extends AbstractExporter
             $structure['auth'] = [
                 'type' => $this->authentication->getType(),
                 $this->authentication->getType() => [
-                    'token' => '{{token}}'
-                ]
+                    'token' => '{{token}}',
+                ],
             ];
         }
     }
@@ -82,7 +82,7 @@ final class PostmanExporter extends AbstractExporter
     protected function processFlatRequests(): array
     {
         return $this->requests
-            ->map(fn ($request) => $this->createRequestItem($request))
+            ->map(fn($request) => $this->createRequestItem($request))
             ->values()
             ->all();
     }
@@ -90,11 +90,11 @@ final class PostmanExporter extends AbstractExporter
     protected function processStructuredRequests(): array
     {
         return $this->requests->groupByPath()
-            ->map(fn ($requests, $group) => [
+            ->map(fn($requests, $group) => [
                 'name' => $group,
-                'item' => $requests->map(fn ($request) => $this->createRequestItem($request))
+                'item' => $requests->map(fn($request) => $this->createRequestItem($request))
                     ->values()
-                    ->all()
+                    ->all(),
             ])
             ->values()
             ->all();
@@ -109,9 +109,9 @@ final class PostmanExporter extends AbstractExporter
                 'header' => $request->headers->formatted(),
                 'url' => $request->url,
                 'description' => $request->description,
-                'body' => $request->body
+                'body' => $request->body,
             ],
-            'response' => []
+            'response' => [],
         ];
     }
 

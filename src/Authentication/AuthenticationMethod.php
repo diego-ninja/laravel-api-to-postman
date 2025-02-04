@@ -7,10 +7,9 @@ use ReflectionClass;
 
 abstract class AuthenticationMethod implements Arrayable
 {
-    public function __construct(protected ?string $token = null)
-    {
-        //
-    }
+    public function __construct(protected ?string $token = null) {}
+
+    abstract public function prefix(): string;
 
     public function toArray(): array
     {
@@ -29,8 +28,6 @@ abstract class AuthenticationMethod implements Arrayable
     public function getType(): string
     {
         $className = (new ReflectionClass($this))->getShortName();
-        return strtolower($className);
+        return mb_strtolower($className);
     }
-
-    abstract public function prefix(): string;
 }

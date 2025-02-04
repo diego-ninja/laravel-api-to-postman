@@ -19,9 +19,9 @@ abstract class AbstractExporter implements Exporter
 
     protected RequestCollection $requests;
 
-    public function __construct(protected readonly Repository $config, private readonly RouteProcessor $processor)
-    {
-    }
+    public function __construct(protected readonly Repository $config, private readonly RouteProcessor $processor) {}
+
+    abstract protected function generateStructure(): array;
 
     public function to(string $filename): self
     {
@@ -49,6 +49,4 @@ abstract class AbstractExporter implements Exporter
         $this->authentication = $authentication;
         return $this;
     }
-
-    abstract protected function generateStructure(): array;
 }

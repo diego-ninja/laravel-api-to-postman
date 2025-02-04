@@ -27,7 +27,7 @@ final class RouteProcessor
 
     public function __construct(
         private readonly Router $router,
-        private readonly Repository $config
+        private readonly Repository $config,
     ) {
         $this->resolveAuth();
     }
@@ -53,14 +53,14 @@ final class RouteProcessor
     protected function processRoute(Route $route, RequestCollection $collection): void
     {
         $methods = array_filter(
-            array_map(fn($value) => Method::tryFrom(strtoupper($value)), $route->methods()),
-            fn($method) => $method !== Method::HEAD
+            array_map(fn($value) => Method::tryFrom(mb_strtoupper($value)), $route->methods()),
+            fn($method) => Method::HEAD !== $method,
         );
 
         $middlewares = $route->gatherMiddleware();
 
         foreach ($methods as $method) {
-            if (!$this->shouldProcessRoute($middlewares)) {
+            if ( ! $this->shouldProcessRoute($middlewares)) {
                 continue;
             }
 
@@ -74,10 +74,10 @@ final class RouteProcessor
                 url: Url::fromRoute(
                     route: $route,
                     method: $method,
-                    formParameters: $this->getParameters($route)
+                    formParameters: $this->getParameters($route),
                 ),
                 authentication: $this->getAuthenticationInfo($middlewares),
-                body: $method === Method::GET ? null : $this->getBody($route)
+                body: Method::GET === $method ? null : $this->getBody($route),
             );
 
             $collection->add($request);
@@ -90,25 +90,23 @@ final class RouteProcessor
     protected function getBody(Route $route): ?array
     {
         $reflectionMethod = $this->getReflectionMethod($route->getAction());
-        if (!$reflectionMethod || !$this->config->get('api-postman.enable_formdata')) {
+        if ( ! $reflectionMethod || ! $this->config->get('api-postman.enable_formdata')) {
             return null;
         }
 
-        $formParameters = (new FormDataProcessor)->process($reflectionMethod);
+        $formParameters = (new FormDataProcessor())->process($reflectionMethod);
         if ($formParameters->isEmpty()) {
             return null;
         }
 
         return [
             'mode' => 'urlencoded',
-            'urlencoded' => $formParameters->map(function ($param) {
-                return [
-                    'key' => $param['name'],
-                    'value' => $this->config->get('api-postman.formdata')[$param['name']] ?? '',
-                    'type' => ParameterType::TEXT->value,
-                    'description' => app(RuleFormatter::class)->format($param['name'], $param['description']),
-                ];
-            })->values()->all()
+            'urlencoded' => $formParameters->map(fn($param) => [
+                'key' => $param['name'],
+                'value' => $this->config->get('api-postman.formdata')[$param['name']] ?? '',
+                'type' => ParameterType::TEXT->value,
+                'description' => app(RuleFormatter::class)->format($param['name'], $param['description']),
+            ])->values()->all(),
         ];
     }
 
@@ -117,16 +115,16 @@ final class RouteProcessor
      */
     protected function getDescription(Route $route): string
     {
-        if (!$this->config->get('api-postman.include_doc_comments')) {
+        if ( ! $this->config->get('api-postman.include_doc_comments')) {
             return '';
         }
 
         $reflectionMethod = $this->getReflectionMethod($route->getAction());
-        if (!$reflectionMethod) {
+        if ( ! $reflectionMethod) {
             return '';
         }
 
-        return (new DocBlockProcessor)($reflectionMethod);
+        return (new DocBlockProcessor())($reflectionMethod);
     }
 
     protected function shouldProcessRoute(array $middlewares): bool
@@ -152,20 +150,20 @@ final class RouteProcessor
                 name: $param,
                 value: '',
                 description: '',
-                type: ParameterType::PATH
+                type: ParameterType::PATH,
             ));
         }
 
         $reflectionMethod = $this->getReflectionMethod($route->getAction());
-        if ($reflectionMethod && $this->config->get('api-postman.enable_formdata') && $route->methods()[0] === 'GET') {
-            $formParameters = (new FormDataProcessor)->process($reflectionMethod);
+        if ($reflectionMethod && $this->config->get('api-postman.enable_formdata') && 'GET' === $route->methods()[0]) {
+            $formParameters = (new FormDataProcessor())->process($reflectionMethod);
             $parameters = $parameters->merge(
                 $formParameters->map(fn(array $param) => new Parameter(
                     name: $param['name'],
                     value: $this->config->get('api-postman.formdata')[$param['name']] ?? '',
                     description: $this->formatRuleDescription($param['name'], $param['description']),
-                    type: ParameterType::QUERY
-                ))
+                    type: ParameterType::QUERY,
+                )),
             );
         }
 
@@ -174,7 +172,7 @@ final class RouteProcessor
 
     protected function formatRuleDescription(string $fieldName, string|array|Rule $rules): string
     {
-        if (!$this->config->get('api-postman.print_rules')) {
+        if ( ! $this->config->get('api-postman.print_rules')) {
             return '';
         }
 
@@ -205,7 +203,7 @@ final class RouteProcessor
             $messages = [];
             foreach ($rules as $rule) {
                 if (is_string($rule)) {
-                    $messages[] = "The $attribute field " . $this->humanizeRule($rule);
+                    $messages[] = "The {$attribute} field " . $this->humanizeRule($rule);
                 } elseif (is_object($rule)) {
                     $messages[] = $this->safelyStringifyClassBasedRule($rule);
                 }
@@ -225,17 +223,17 @@ final class RouteProcessor
             'required' => 'is required',
             'integer' => 'must be an integer',
             'string' => 'must be a string',
-            'max' => "must not be greater than $parts[1]",
-            'min' => "must be at least $parts[1]",
+            'max' => "must not be greater than {$parts[1]}",
+            'min' => "must be at least {$parts[1]}",
             'sometimes' => '(Optional)',
             'nullable' => '(Nullable)',
-            default => "must satisfy rule: $rule",
+            default => "must satisfy rule: {$rule}",
         };
     }
 
     protected function safelyStringifyClassBasedRule($rule): string
     {
-        if (!is_object($rule) || !method_exists($rule, '__toString')) {
+        if ( ! is_object($rule) || ! method_exists($rule, '__toString')) {
             return '';
         }
 
@@ -253,7 +251,7 @@ final class RouteProcessor
             $config = $this->config->get('api-postman.authentication');
             return [
                 'type' => $config['method'],
-                'token' => $config['token'] ?? '{{token}}'
+                'token' => $config['token'] ?? '{{token}}',
             ];
         }
         return null;
@@ -273,17 +271,17 @@ final class RouteProcessor
             return new ReflectionFunction($action['uses']);
         }
 
-        if (!is_string($action['uses'])) {
+        if ( ! is_string($action['uses'])) {
             return null;
         }
 
         $routeData = explode('@', $action['uses']);
-        if (count($routeData) !== 2) {
+        if (2 !== count($routeData)) {
             return null;
         }
 
         $reflection = new ReflectionClass($routeData[0]);
-        if (!$reflection->hasMethod($routeData[1])) {
+        if ( ! $reflection->hasMethod($routeData[1])) {
             return null;
         }
 
@@ -292,7 +290,7 @@ final class RouteProcessor
 
     private function containsSerializedClosure(array $action): bool
     {
-        if (!is_string($action['uses'])) {
+        if ( ! is_string($action['uses'])) {
             return false;
         }
 

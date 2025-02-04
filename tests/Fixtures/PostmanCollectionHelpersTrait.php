@@ -7,7 +7,7 @@ trait PostmanCollectionHelpersTrait
     private function retrieveRoutes(array $route): int
     {
         // Skip patch routes
-        if (isset($route['request']['method']) && $route['request']['method'] === 'PATCH') {
+        if (isset($route['request']['method']) && 'PATCH' === $route['request']['method']) {
             return 0;
         }
 

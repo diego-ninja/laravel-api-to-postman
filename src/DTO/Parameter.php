@@ -12,7 +12,7 @@ final readonly class Parameter implements JsonSerializable
         public string  $value,
         public ?string $description = null,
         public bool $disabled = false,
-        public ParameterType  $type = ParameterType::QUERY
+        public ParameterType  $type = ParameterType::QUERY,
     ) {}
 
     public static function from(string|array|Parameter $data): Parameter
@@ -30,7 +30,7 @@ final readonly class Parameter implements JsonSerializable
             value: $data['value'],
             description: $data['description'] ?? null,
             disabled: $data['disabled'] ?? false,
-            type: ParameterType::from($data['type'])
+            type: ParameterType::from($data['type']),
         );
     }
 
@@ -40,7 +40,7 @@ final readonly class Parameter implements JsonSerializable
             'key' => $this->name,
             'value' => $this->value,
             'description' => $this->description,
-            'type' => $this->type->value
+            'type' => $this->type->value,
         ];
     }
 

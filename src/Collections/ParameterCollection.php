@@ -13,7 +13,7 @@ final class ParameterCollection extends Collection
      */
     public static function from(array $parameters): ParameterCollection
     {
-        return new self(array_map(fn (array|Parameter $parameter) => Parameter::from($parameter), $parameters));
+        return new self(array_map(fn(array|Parameter $parameter) => Parameter::from($parameter), $parameters));
     }
 
     public function byType(ParameterType $type): ParameterCollection

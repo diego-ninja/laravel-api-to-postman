@@ -22,6 +22,14 @@ class ExportInsomniaCollectionTest extends TestCase
         Storage::disk()->deleteDirectory('insomnia');
     }
 
+    public static function providerFormDataEnabled(): array
+    {
+        return [
+            [false],
+            [true],
+        ];
+    }
+
     #[DataProvider('providerFormDataEnabled')]
     public function test_standard_export_works(bool $formDataEnabled): void
     {
@@ -29,7 +37,7 @@ class ExportInsomniaCollectionTest extends TestCase
 
         $this->artisan('export:collection --format=insomnia')->assertExitCode(0);
 
-        $collection = json_decode(Storage::get('insomnia/'.config('api-postman.filename')), true);
+        $collection = json_decode(Storage::get('insomnia/' . config('api-postman.filename')), true);
 
         // Verify basic structure
         $this->assertEquals('export', $collection['_type']);
@@ -37,18 +45,18 @@ class ExportInsomniaCollectionTest extends TestCase
         $this->assertArrayHasKey('resources', $collection);
 
         // Verify workspace
-        $workspace = Arr::first($collection['resources'], fn($r) => $r['_type'] === 'workspace');
+        $workspace = Arr::first($collection['resources'], fn($r) => 'workspace' === $r['_type']);
         $this->assertNotNull($workspace);
         $this->assertStringStartsWith('wrk_', $workspace['_id']);
 
         // Verify environment
-        $environment = Arr::first($collection['resources'], fn($r) => $r['_type'] === 'environment');
+        $environment = Arr::first($collection['resources'], fn($r) => 'environment' === $r['_type']);
         $this->assertNotNull($environment);
         $this->assertStringStartsWith('env_', $environment['_id']);
         $this->assertEquals('http://api.test', Arr::first($environment['data'])['value']);
 
         // Verify requests
-        $requests = Arr::where($collection['resources'], fn($r) => $r['_type'] === 'request');
+        $requests = Arr::where($collection['resources'], fn($r) => 'request' === $r['_type']);
         $routes = $this->app['router']->getRoutes();
 
         $totalRequests = $this->countCollectionItems($requests);
@@ -57,9 +65,7 @@ class ExportInsomniaCollectionTest extends TestCase
         foreach ($routes as $route) {
             $methods = $route->methods();
 
-            $matchingRequests = Arr::where($requests, function ($request) use ($route) {
-                return $request['name'] === $route->getName();
-            });
+            $matchingRequests = Arr::where($requests, fn($request) => $request['name'] === $route->getName());
 
             $matchingRequest = Arr::first($matchingRequests);
 
@@ -75,15 +81,15 @@ class ExportInsomniaCollectionTest extends TestCase
 
         $this->artisan('export:collection --format=insomnia --bearer=1234567890')->assertExitCode(0);
 
-        $collection = json_decode(Storage::get('insomnia/'.config('api-postman.filename')), true);
+        $collection = json_decode(Storage::get('insomnia/' . config('api-postman.filename')), true);
 
         // Verify environment token
-        $environment = Arr::first($collection['resources'], fn($r) => $r['_type'] === 'environment');
-        $tokenVariable = Arr::first($environment['data'], fn($d) => $d['name'] === 'token');
+        $environment = Arr::first($collection['resources'], fn($r) => 'environment' === $r['_type']);
+        $tokenVariable = Arr::first($environment['data'], fn($d) => 'token' === $d['name']);
         $this->assertEquals('1234567890', $tokenVariable['value']);
 
         // Verify requests authentication
-        $requests = Arr::where($collection['resources'], fn($r) => $r['_type'] === 'request');
+        $requests = Arr::where($collection['resources'], fn($r) => 'request' === $r['_type']);
         foreach ($requests as $request) {
             if (in_array($request['method'], ['GET', 'HEAD', 'OPTIONS'])) {
                 continue;
@@ -102,15 +108,15 @@ class ExportInsomniaCollectionTest extends TestCase
 
         $this->artisan('export:collection --format=insomnia --basic=username:password1234')->assertExitCode(0);
 
-        $collection = json_decode(Storage::get('insomnia/'.config('api-postman.filename')), true);
+        $collection = json_decode(Storage::get('insomnia/' . config('api-postman.filename')), true);
 
         // Verify environment token
-        $environment = Arr::first($collection['resources'], fn($r) => $r['_type'] === 'environment');
-        $tokenVariable = Arr::first($environment['data'], fn($d) => $d['name'] === 'token');
+        $environment = Arr::first($collection['resources'], fn($r) => 'environment' === $r['_type']);
+        $tokenVariable = Arr::first($environment['data'], fn($d) => 'token' === $d['name']);
         $this->assertEquals('username:password1234', $tokenVariable['value']);
 
         // Verify requests authentication
-        $requests = Arr::where($collection['resources'], fn($r) => $r['_type'] === 'request');
+        $requests = Arr::where($collection['resources'], fn($r) => 'request' === $r['_type']);
         foreach ($requests as $request) {
             if (in_array($request['method'], ['GET', 'HEAD', 'OPTIONS'])) {
                 continue;
@@ -132,14 +138,14 @@ class ExportInsomniaCollectionTest extends TestCase
 
         $this->artisan('export:collection --format=insomnia')->assertExitCode(0);
 
-        $collection = json_decode(Storage::get('insomnia/'.config('api-postman.filename')), true);
+        $collection = json_decode(Storage::get('insomnia/' . config('api-postman.filename')), true);
 
         // Verify folders exist
-        $folders = Arr::where($collection['resources'], fn($r) => $r['_type'] === 'request_group');
+        $folders = Arr::where($collection['resources'], fn($r) => 'request_group' === $r['_type']);
         $this->assertNotEmpty($folders);
 
         // Verify requests are in folders
-        $requests = Arr::where($collection['resources'], fn($r) => $r['_type'] === 'request');
+        $requests = Arr::where($collection['resources'], fn($r) => 'request' === $r['_type']);
         foreach ($requests as $request) {
             $this->assertStringStartsWith('fld_', $request['parentId']);
         }
@@ -155,8 +161,8 @@ class ExportInsomniaCollectionTest extends TestCase
 
         $this->artisan('export:collection --format=insomnia')->assertExitCode(0);
 
-        $collection = json_decode(Storage::get('insomnia/'.config('api-postman.filename')), true);
-        $requests = Arr::where($collection['resources'], fn($r) => $r['_type'] === 'request');
+        $collection = json_decode(Storage::get('insomnia/' . config('api-postman.filename')), true);
+        $requests = Arr::where($collection['resources'], fn($r) => 'request' === $r['_type']);
 
         $targetRequest = Arr::first($requests, fn($r) => str_contains($r['name'], 'store-with-form-request'));
         $this->assertNotNull($targetRequest);
@@ -178,8 +184,8 @@ class ExportInsomniaCollectionTest extends TestCase
 
         $this->artisan('export:collection --format=insomnia')->assertExitCode(0);
 
-        $collection = json_decode(Storage::get('insomnia/'.config('api-postman.filename')), true);
-        $requests = Arr::where($collection['resources'], fn($r) => $r['_type'] === 'request');
+        $collection = json_decode(Storage::get('insomnia/' . config('api-postman.filename')), true);
+        $requests = Arr::where($collection['resources'], fn($r) => 'request' === $r['_type']);
 
         $targetRequest = Arr::first($requests, fn($r) => str_contains($r['name'], 'get-with-form-request'));
         $this->assertNotNull($targetRequest);
@@ -201,8 +207,8 @@ class ExportInsomniaCollectionTest extends TestCase
 
         $this->artisan('export:collection --format=insomnia')->assertExitCode(0);
 
-        $collection = json_decode(Storage::get('insomnia/'.config('api-postman.filename')), true);
-        $requests = Arr::where($collection['resources'], fn($r) => $r['_type'] === 'request');
+        $collection = json_decode(Storage::get('insomnia/' . config('api-postman.filename')), true);
+        $requests = Arr::where($collection['resources'], fn($r) => 'request' === $r['_type']);
 
         $targetRequest = Arr::first($requests, fn($r) => str_contains($r['name'], 'store-with-form-request'));
         $this->assertNotNull($targetRequest);
@@ -219,8 +225,8 @@ class ExportInsomniaCollectionTest extends TestCase
     {
         $this->artisan('export:collection --format=insomnia')->assertExitCode(0);
 
-        $collection = json_decode(Storage::get('insomnia/'.config('api-postman.filename')), true);
-        $requests = Arr::where($collection['resources'], fn($r) => $r['_type'] === 'request');
+        $collection = json_decode(Storage::get('insomnia/' . config('api-postman.filename')), true);
+        $requests = Arr::where($collection['resources'], fn($r) => 'request' === $r['_type']);
 
         $targetRequest = Arr::first($requests, fn($r) => str_contains($r['name'], 'php-doc-route'));
         $this->assertNotNull($targetRequest);
@@ -233,30 +239,22 @@ class ExportInsomniaCollectionTest extends TestCase
     {
         $this->artisan('export:collection --format=insomnia')->assertExitCode(0);
 
-        $collection = json_decode(Storage::get('insomnia/'.config('api-postman.filename')), true);
-        $requests = Arr::where($collection['resources'], fn($r) => $r['_type'] === 'request');
+        $collection = json_decode(Storage::get('insomnia/' . config('api-postman.filename')), true);
+        $requests = Arr::where($collection['resources'], fn($r) => 'request' === $r['_type']);
 
         // Test hyphenated parameters
-        $auditLogRequest = Arr::first($requests, fn($r) => $r['name'] === 'example.users.audit-logs.update' && $r['method'] === 'PATCH');
+        $auditLogRequest = Arr::first($requests, fn($r) => 'example.users.audit-logs.update' === $r['name'] && 'PATCH' === $r['method']);
         $this->assertNotNull($auditLogRequest);
         $this->assertEquals('{{ base_url }}/example/users/:user/audit-logs/:audit_log', $auditLogRequest['url']);
 
         // Test underscore parameters
-        $otherLogRequest = Arr::first($requests, fn($r) => $r['name'] === 'example.users.other_logs.update' && $r['method'] === 'PATCH');
+        $otherLogRequest = Arr::first($requests, fn($r) => 'example.users.other_logs.update' === $r['name'] && 'PATCH' === $r['method']);
         $this->assertNotNull($otherLogRequest);
         $this->assertEquals('{{ base_url }}/example/users/:user/other_logs/:other_log', $otherLogRequest['url']);
 
         // Test camelCase parameters
-        $someLogRequest = Arr::first($requests, fn($r) => $r['name'] === 'example.users.someLogs.update' && $r['method'] === 'PATCH');
+        $someLogRequest = Arr::first($requests, fn($r) => 'example.users.someLogs.update' === $r['name'] && 'PATCH' === $r['method']);
         $this->assertNotNull($someLogRequest);
         $this->assertEquals('{{ base_url }}/example/users/:user/someLogs/:someLog', $someLogRequest['url']);
-    }
-
-    public static function providerFormDataEnabled(): array
-    {
-        return [
-            [false],
-            [true],
-        ];
     }
 }

@@ -29,7 +29,7 @@ class ExportCollectionCommand extends Command
         $filename = str_replace(
             ['{timestamp}', '{app}', '{format}'],
             [date('Y_m_d_His'), Str::snake(config('app.name')), $format->value],
-            config('api-postman.filename')
+            config('api-postman.filename'),
         );
 
         config()->set('api-postman.authentication', [
@@ -58,7 +58,7 @@ class ExportCollectionCommand extends Command
             ->export();
 
         Storage::disk(config('api-postman.disk'))
-            ->put(sprintf('%s/%s' , $format->value, $filename), $exporter->getOutput());
+            ->put(sprintf('%s/%s', $format->value, $filename), $exporter->getOutput());
 
         $this->info('Collection Exported: ' . storage_path(sprintf('app/%s/%s', $format->value, $filename)));
     }

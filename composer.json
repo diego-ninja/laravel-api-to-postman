@@ -39,7 +39,7 @@
     "extra": {
         "laravel": {
             "providers": [
-                "AndreasElia\\PostmanGenerator\\PostmanGeneratorServiceProvider"
+                "CollectionGeneratorServiceProvider"
             ]
         }
     },
