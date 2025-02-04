@@ -1,0 +1,65 @@
+<?php
+
+namespace AndreasElia\PostmanGenerator\Commands;
+
+use AndreasElia\PostmanGenerator\Authentication\Basic;
+use AndreasElia\PostmanGenerator\Authentication\Bearer;
+use AndreasElia\PostmanGenerator\Enums\CollectionFormat;
+use AndreasElia\PostmanGenerator\Exporters\InsomniaExporter;
+use AndreasElia\PostmanGenerator\Exporters\PostmanExporter;
+use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+
+class ExportCollectionCommand extends Command
+{
+    /** @var string */
+    protected $signature = 'export:collection
+                            {--format= : The format for the collection [postman|insomnia](default: postman)}
+                            {--bearer= : The bearer token to use on your endpoints}
+                            {--basic= : The basic auth to use on your endpoints}';
+
+    /** @var string */
+    protected $description = 'Automatically generate a request collection for your API routes';
+
+    public function handle(): void
+    {
+        $format = CollectionFormat::tryFrom($this->option('format')) ?? CollectionFormat::Postman;
+
+        $filename = str_replace(
+            ['{timestamp}', '{app}', '{format}'],
+            [date('Y_m_d_His'), Str::snake(config('app.name')), $format->value],
+            config('api-postman.filename')
+        );
+
+        config()->set('api-postman.authentication', [
+            'method' => $this->option('bearer') ? 'bearer' : ($this->option('basic') ? 'basic' : null),
+            'token' => $this->option('bearer') ?? $this->option('basic') ?? null,
+        ]);
+
+        $exporter = match ($format) {
+            CollectionFormat::Insomnia => app(InsomniaExporter::class),
+            default => app(PostmanExporter::class),
+        };
+
+        $exporter
+            ->to($filename)
+            ->setAuthentication(value(function () {
+                if (filled($this->option('bearer'))) {
+                    return new Bearer($this->option('bearer'));
+                }
+
+                if (filled($this->option('basic'))) {
+                    return new Basic($this->option('basic'));
+                }
+
+                return null;
+            }))
+            ->export();
+
+        Storage::disk(config('api-postman.disk'))
+            ->put(sprintf('%s/%s' , $format->value, $filename), $exporter->getOutput());
+
+        $this->info('Collection Exported: ' . storage_path(sprintf('app/%s/%s', $format->value, $filename)));
+    }
+}

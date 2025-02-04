@@ -2,9 +2,9 @@
 
 namespace AndreasElia\PostmanGenerator\Tests\Fixtures;
 
-trait CollectionHelpersTrait
+trait PostmanCollectionHelpersTrait
 {
-    private function retrieveRoutes(array $route)
+    private function retrieveRoutes(array $route): int
     {
         // Skip patch routes
         if (isset($route['request']['method']) && $route['request']['method'] === 'PATCH') {
@@ -24,7 +24,7 @@ trait CollectionHelpersTrait
         return 1;
     }
 
-    private function countCollectionItems(array $collectionItems)
+    private function countCollectionItems(array $collectionItems): int
     {
         $sum = 0;
 

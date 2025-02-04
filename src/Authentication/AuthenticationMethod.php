@@ -3,6 +3,7 @@
 namespace AndreasElia\PostmanGenerator\Authentication;
 
 use Illuminate\Contracts\Support\Arrayable;
+use ReflectionClass;
 
 abstract class AuthenticationMethod implements Arrayable
 {
@@ -22,6 +23,13 @@ abstract class AuthenticationMethod implements Arrayable
     public function getToken(): string
     {
         return $this->token;
+    }
+
+
+    public function getType(): string
+    {
+        $className = (new ReflectionClass($this))->getShortName();
+        return strtolower($className);
     }
 
     abstract public function prefix(): string;

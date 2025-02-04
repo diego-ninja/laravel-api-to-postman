@@ -2,210 +2,288 @@
 
 namespace AndreasElia\PostmanGenerator\Processors;
 
+use AndreasElia\PostmanGenerator\Collections\HeaderCollection;
+use AndreasElia\PostmanGenerator\Collections\ParameterCollection;
+use AndreasElia\PostmanGenerator\Collections\RequestCollection;
 use AndreasElia\PostmanGenerator\Concerns\HasAuthentication;
+use AndreasElia\PostmanGenerator\DTO\Parameter;
+use AndreasElia\PostmanGenerator\DTO\Request;
+use AndreasElia\PostmanGenerator\DTO\Url;
+use AndreasElia\PostmanGenerator\Enums\Method;
+use AndreasElia\PostmanGenerator\Enums\ParameterType;
+use AndreasElia\PostmanGenerator\Formatters\RuleFormatter;
 use Closure;
-use Illuminate\Contracts\Config\Repository;
-use Illuminate\Contracts\Validation\Rule;
+use Illuminate\Config\Repository;
 use Illuminate\Routing\Route;
 use Illuminate\Routing\Router;
-use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Str;
-use Illuminate\Support\Stringable;
-use Illuminate\Validation\ValidationRuleParser;
+use Illuminate\Validation\Rule;
 use ReflectionClass;
+use ReflectionException;
 use ReflectionFunction;
 
-class RouteProcessor
+final class RouteProcessor
 {
     use HasAuthentication;
 
-    private array $config;
-
-    private Router $router;
-
-    private array $output;
-
-    public function __construct(Repository $config, Router $router)
-    {
-        $this->config = $config['api-postman'];
-
-        $this->router = $router;
-
+    public function __construct(
+        private readonly Router $router,
+        private readonly Repository $config
+    ) {
         $this->resolveAuth();
     }
 
-    public function process(array $output): array
+    /**
+     * @throws ReflectionException
+     */
+    public function process(): RequestCollection
     {
-        $this->output = $output;
-
         $routes = collect($this->router->getRoutes());
+        $collection = new RequestCollection();
 
-        /** @var Route $route */
         foreach ($routes as $route) {
-            $this->processRoute($route);
+            $this->processRoute($route, $collection);
         }
 
-        return $this->output;
+        return $collection;
     }
 
     /**
-     * @throws \ReflectionException
+     * @throws ReflectionException
      */
-    protected function processRoute(Route $route)
+    protected function processRoute(Route $route, RequestCollection $collection): void
     {
-        try {
-            $methods = array_filter($route->methods(), fn ($value) => $value !== 'HEAD');
-            $middlewares = $route->gatherMiddleware();
+        $methods = array_filter(
+            array_map(fn($value) => Method::tryFrom(strtoupper($value)), $route->methods()),
+            fn($method) => $method !== Method::HEAD
+        );
 
-            foreach ($methods as $method) {
-                $includedMiddleware = false;
+        $middlewares = $route->gatherMiddleware();
 
-                foreach ($middlewares as $middleware) {
-                    if (in_array($middleware, $this->config['include_middleware'])) {
-                        $includedMiddleware = true;
-                    }
-                }
-
-                if (empty($middlewares) || ! $includedMiddleware) {
-                    continue;
-                }
-
-                $reflectionMethod = $this->getReflectionMethod($route->getAction());
-
-                if (! $reflectionMethod) {
-                    continue;
-                }
-
-                $routeHeaders = $this->config['headers'];
-
-                if ($this->authentication && in_array($this->config['auth_middleware'], $middlewares)) {
-                    $routeHeaders[] = $this->authentication->toArray();
-                }
-
-                $uri = Str::of($route->uri())->replaceMatches('/{([[:alnum:]_]+)}/', ':$1');
-
-                if ($this->config['include_doc_comments']) {
-                    $description = (new DocBlockProcessor)($reflectionMethod);
-                }
-
-                $data = [
-                    'name' => $route->uri(),
-                    'request' => array_merge(
-                        $this->processRequest(
-                            $method,
-                            $uri,
-                            $this->config['enable_formdata'] ? (new FormDataProcessor)->process($reflectionMethod) : collect()
-                        ),
-                        ['description' => $description ?? '']
-                    ),
-                    'response' => [],
-
-                    'protocolProfileBehavior' => [
-                        'disableBodyPruning' => $this->config['protocol_profile_behavior']['disable_body_pruning'] ?? false,
-                    ],
-                ];
-
-                if ($this->config['structured']) {
-                    $routeNameSegments = (
-                        $route->getName()
-                            ? Str::of($route->getName())->explode('.')
-                            : Str::of($route->uri())->after('api/')->explode('/')
-                    )->filter(fn ($value) => ! is_null($value) && $value !== '');
-
-                    if (! $this->config['crud_folders']) {
-                        if (in_array($routeNameSegments->last(), ['index', 'store', 'show', 'update', 'destroy'])) {
-                            $routeNameSegments->forget($routeNameSegments->count() - 1);
-                        }
-                    }
-
-                    $this->buildTree($this->output, $routeNameSegments->all(), $data);
-                } else {
-                    $this->output['item'][] = $data;
-                }
+        foreach ($methods as $method) {
+            if (!$this->shouldProcessRoute($middlewares)) {
+                continue;
             }
-        } catch (\Exception $e) {
-            Log::warning('Failed to process route: '.$route->uri());
+
+            $request = new Request(
+                name: $route->getName() ?: $route->uri(),
+                method: $method,
+                uri: $route->uri(),
+                description: $this->getDescription($route),
+                headers: $this->getHeaders(),
+                parameters: $this->getParameters($route),
+                url: Url::fromRoute(
+                    route: $route,
+                    method: $method,
+                    formParameters: $this->getParameters($route)
+                ),
+                authentication: $this->getAuthenticationInfo($middlewares),
+                body: $method === Method::GET ? null : $this->getBody($route)
+            );
+
+            $collection->add($request);
         }
     }
 
-    protected function processRequest(string $method, Stringable $uri, Collection $rules): array
+    /**
+     * @throws ReflectionException
+     */
+    protected function getBody(Route $route): ?array
     {
-        return collect([
-            'method' => strtoupper($method),
-            'header' => collect($this->config['headers'])
-                ->push($this->authentication?->toArray())
-                ->filter()
-                ->values()
-                ->all(),
-            'url' => [
-                'raw' => '{{base_url}}/'.$uri,
-                'host' => ['{{base_url}}'],
-                'path' => $uri->explode('/')->filter()->all(),
-                'variable' => $uri
-                    ->matchAll('/(?<={)[[:alnum:]]+(?=})/m')
-                    ->transform(function ($variable) {
-                        return ['key' => $variable, 'value' => ''];
-                    })
-                    ->all(),
-            ],
-        ])
-            ->when($rules, function (Collection $collection, Collection $rules) use ($method) {
-                if ($rules->isEmpty()) {
-                    return $collection;
-                }
+        $reflectionMethod = $this->getReflectionMethod($route->getAction());
+        if (!$reflectionMethod || !$this->config->get('api-postman.enable_formdata')) {
+            return null;
+        }
 
-                $rules->transform(fn ($rule) => [
-                    'key' => $rule['name'],
-                    'value' => $this->config['formdata'][$rule['name']] ?? null,
-                    'description' => $this->config['print_rules'] ? $this->parseRulesIntoHumanReadable($rule['name'], $rule['description']) : null,
-                ]);
+        $formParameters = (new FormDataProcessor)->process($reflectionMethod);
+        if ($formParameters->isEmpty()) {
+            return null;
+        }
 
-                if ($method === 'GET') {
-                    return $collection->mergeRecursive([
-                        'url' => [
-                            'query' => $rules->map(fn ($value) => array_merge($value, ['disabled' => false])),
-                        ],
-                    ]);
-                }
-
-                return $collection->put('body', [
-                    'mode' => 'urlencoded',
-                    'urlencoded' => $rules->map(fn ($value) => array_merge($value, ['type' => 'text'])),
-                ]);
-            })
-            ->all();
-    }
-
-    protected function processResponse(string $method, array $action): array
-    {
         return [
-            'code' => 200,
-            'body' => [
-                'mode' => 'raw',
-                'raw' => '',
-            ],
+            'mode' => 'urlencoded',
+            'urlencoded' => $formParameters->map(function ($param) {
+                return [
+                    'key' => $param['name'],
+                    'value' => $this->config->get('api-postman.formdata')[$param['name']] ?? '',
+                    'type' => ParameterType::TEXT->value,
+                    'description' => app(RuleFormatter::class)->format($param['name'], $param['description']),
+                ];
+            })->values()->all()
         ];
     }
 
     /**
-     * @throws \ReflectionException
+     * @throws ReflectionException
      */
-    private function getReflectionMethod(array $routeAction): ?object
+    protected function getDescription(Route $route): string
     {
-        if ($this->containsSerializedClosure($routeAction)) {
-            $routeAction['uses'] = unserialize($routeAction['uses'])->getClosure();
+        if (!$this->config->get('api-postman.include_doc_comments')) {
+            return '';
         }
 
-        if ($routeAction['uses'] instanceof Closure) {
-            return new ReflectionFunction($routeAction['uses']);
+        $reflectionMethod = $this->getReflectionMethod($route->getAction());
+        if (!$reflectionMethod) {
+            return '';
         }
 
-        $routeData = explode('@', $routeAction['uses']);
+        return (new DocBlockProcessor)($reflectionMethod);
+    }
+
+    protected function shouldProcessRoute(array $middlewares): bool
+    {
+        foreach ($middlewares as $middleware) {
+            if (in_array($middleware, $this->config->get('api-postman.include_middleware'))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @throws ReflectionException
+     */
+    protected function getParameters(Route $route): ParameterCollection
+    {
+        $parameters = new ParameterCollection();
+        preg_match_all('/\{([^}]+)}/', $route->uri(), $matches);
+
+        foreach ($matches[1] as $param) {
+            $parameters->add(new Parameter(
+                name: $param,
+                value: '',
+                description: '',
+                type: ParameterType::PATH
+            ));
+        }
+
+        $reflectionMethod = $this->getReflectionMethod($route->getAction());
+        if ($reflectionMethod && $this->config->get('api-postman.enable_formdata') && $route->methods()[0] === 'GET') {
+            $formParameters = (new FormDataProcessor)->process($reflectionMethod);
+            $parameters = $parameters->merge(
+                $formParameters->map(fn(array $param) => new Parameter(
+                    name: $param['name'],
+                    value: $this->config->get('api-postman.formdata')[$param['name']] ?? '',
+                    description: $this->formatRuleDescription($param['name'], $param['description']),
+                    type: ParameterType::QUERY
+                ))
+            );
+        }
+
+        return $parameters;
+    }
+
+    protected function formatRuleDescription(string $fieldName, string|array|Rule $rules): string
+    {
+        if (!$this->config->get('api-postman.print_rules')) {
+            return '';
+        }
+
+        if (is_string($rules)) {
+            return $rules;
+        }
+
+        if (is_array($rules)) {
+            return $this->config['rules_to_human_readable']
+                ? $this->parseRulesIntoHumanReadable($fieldName, $rules)
+                : implode(', ', $rules);
+        }
+
+        if (is_object($rules)) {
+            return $this->safelyStringifyClassBasedRule($rules);
+        }
+
+        return '';
+    }
+
+    protected function parseRulesIntoHumanReadable($attribute, $rules): string
+    {
+        if (is_object($rules)) {
+            return $this->safelyStringifyClassBasedRule($rules);
+        }
+
+        if (is_array($rules)) {
+            $messages = [];
+            foreach ($rules as $rule) {
+                if (is_string($rule)) {
+                    $messages[] = "The $attribute field " . $this->humanizeRule($rule);
+                } elseif (is_object($rule)) {
+                    $messages[] = $this->safelyStringifyClassBasedRule($rule);
+                }
+            }
+            return implode(', ', array_filter($messages));
+        }
+
+        return '';
+    }
+
+    protected function humanizeRule(string $rule): string
+    {
+        $parts = explode(':', $rule);
+        $ruleName = $parts[0];
+
+        return match ($ruleName) {
+            'required' => 'is required',
+            'integer' => 'must be an integer',
+            'string' => 'must be a string',
+            'max' => "must not be greater than $parts[1]",
+            'min' => "must be at least $parts[1]",
+            'sometimes' => '(Optional)',
+            'nullable' => '(Nullable)',
+            default => "must satisfy rule: $rule",
+        };
+    }
+
+    protected function safelyStringifyClassBasedRule($rule): string
+    {
+        if (!is_object($rule) || !method_exists($rule, '__toString')) {
+            return '';
+        }
+
+        return (string) $rule;
+    }
+
+    protected function getHeaders(): HeaderCollection
+    {
+        return HeaderCollection::from($this->config->get('api-postman.headers'));
+    }
+
+    protected function getAuthenticationInfo(array $middlewares): ?array
+    {
+        if (in_array($this->config->get('api-postman.auth_middleware'), $middlewares)) {
+            $config = $this->config->get('api-postman.authentication');
+            return [
+                'type' => $config['method'],
+                'token' => $config['token'] ?? '{{token}}'
+            ];
+        }
+        return null;
+    }
+
+
+    /**
+     * @throws ReflectionException
+     */
+    private function getReflectionMethod(array $action): ?object
+    {
+        if ($this->containsSerializedClosure($action)) {
+            $action['uses'] = unserialize($action['uses'])->getClosure();
+        }
+
+        if ($action['uses'] instanceof Closure) {
+            return new ReflectionFunction($action['uses']);
+        }
+
+        if (!is_string($action['uses'])) {
+            return null;
+        }
+
+        $routeData = explode('@', $action['uses']);
+        if (count($routeData) !== 2) {
+            return null;
+        }
+
         $reflection = new ReflectionClass($routeData[0]);
-
-        if (! $reflection->hasMethod($routeData[1])) {
+        if (!$reflection->hasMethod($routeData[1])) {
             return null;
         }
 
@@ -214,130 +292,22 @@ class RouteProcessor
 
     private function containsSerializedClosure(array $action): bool
     {
-        return is_string($action['uses']) && Str::startsWith($action['uses'], [
+        if (!is_string($action['uses'])) {
+            return false;
+        }
+
+        $needles = [
             'C:32:"Opis\\Closure\\SerializableClosure',
-            'O:47:"Laravel\SerializableClosure\\SerializableClosure',
+            'O:47:"Laravel\\SerializableClosure\\SerializableClosure',
             'O:55:"Laravel\\SerializableClosure\\UnsignedSerializableClosure',
-        ]);
-    }
+        ];
 
-    protected function buildTree(array &$routes, array $segments, array $request): void
-    {
-        $parent = &$routes;
-        $destination = end($segments);
-
-        foreach ($segments as $segment) {
-            $matched = false;
-
-            foreach ($parent['item'] as &$item) {
-                if ($item['name'] === $segment) {
-                    $parent = &$item;
-
-                    if ($segment === $destination) {
-                        $parent['item'][] = $request;
-                    }
-
-                    $matched = true;
-
-                    break;
-                }
-            }
-
-            unset($item);
-
-            if (! $matched) {
-                $item = [
-                    'name' => $segment,
-                    'item' => $segment === $destination ? [$request] : [],
-                ];
-
-                $parent['item'][] = &$item;
-                $parent = &$item;
-            }
-
-            unset($item);
-        }
-    }
-
-    protected function parseRulesIntoHumanReadable($attribute, $rules): string
-    {
-        // ... bail if user has asked for non interpreted strings:
-        if (! $this->config['rules_to_human_readable']) {
-            foreach ($rules as $i => $rule) {
-                // because we don't support custom rule classes, we remove them from the rules
-                if (is_subclass_of($rule, Rule::class)) {
-                    unset($rules[$i]);
-                }
-            }
-
-            return is_array($rules) ? implode(', ', $rules) : $this->safelyStringifyClassBasedRule($rules);
-        }
-
-        /*
-         * An object based rule is presumably a Laravel default class based rule or one that implements the Illuminate
-         * Rule interface. Lets try to safely access the string representation...
-         */
-        if (is_object($rules)) {
-            $rules = [$this->safelyStringifyClassBasedRule($rules)];
-        }
-
-        /*
-         * Handle string based rules (e.g. required|string|max:30)
-         */
-        if (is_array($rules)) {
-            foreach ($rules as $i => $rule) {
-                if (is_object($rule)) {
-                    unset($rules[$i]);
-                }
-            }
-
-            $validator = Validator::make([], [$attribute => implode('|', $rules)]);
-
-            foreach ($rules as $rule) {
-                [$rule, $parameters] = ValidationRuleParser::parse($rule);
-
-                $validator->addFailure($attribute, $rule, $parameters);
-            }
-
-            $messages = $validator->getMessageBag()->toArray()[$attribute];
-
-            if (is_array($messages)) {
-                $messages = $this->handleEdgeCases($messages);
-            }
-
-            return implode(', ', is_array($messages) ? $messages : $messages->toArray());
-        }
-
-        // ...safely return a safe value if we encounter neither a string or object based rule set:
-        return '';
-    }
-
-    protected function handleEdgeCases(array $messages): array
-    {
-        foreach ($messages as $key => $message) {
-            if ($message === 'validation.nullable') {
-                $messages[$key] = '(Nullable)';
-
-                continue;
-            }
-
-            if ($message === 'validation.sometimes') {
-                $messages[$key] = '(Optional)';
+        foreach ($needles as $needle) {
+            if (str_starts_with($action['uses'], $needle)) {
+                return true;
             }
         }
 
-        return $messages;
-    }
-
-    /**
-     * In this case we have received what is most likely a Rule Object but are not certain.
-     */
-    protected function safelyStringifyClassBasedRule($probableRule): string
-    {
-        if (! is_object($probableRule) || is_subclass_of($probableRule, Rule::class) || ! method_exists($probableRule, '__toString')) {
-            return '';
-        }
-
-        return (string) $probableRule;
+        return false;
     }
 }

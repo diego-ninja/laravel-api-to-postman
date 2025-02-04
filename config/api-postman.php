@@ -22,7 +22,7 @@ return [
     |
     */
 
-    'filename' => '{timestamp}_{app}_collection.json',
+    'filename' => '{timestamp}_{app}_{format}_collection.json',
 
     /*
     |--------------------------------------------------------------------------

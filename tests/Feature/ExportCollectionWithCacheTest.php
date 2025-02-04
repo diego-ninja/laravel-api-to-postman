@@ -6,7 +6,7 @@ use AndreasElia\PostmanGenerator\Tests\TestCase;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Storage;
 
-class ExportPostmanWithCacheTest extends TestCase
+class ExportCollectionWithCacheTest extends TestCase
 {
     use \Orchestra\Testbench\Concerns\HandlesRoutes;
 
