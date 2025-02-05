@@ -280,8 +280,8 @@ class ExportPostmanCollectionTest extends TestCase
         $eventScriptPath = 'tests/Fixtures/ExampleEvent.js';
 
         config([
-            'api-postman.prerequest_script' => $eventScriptPath,
-            'api-postman.test_script' => $eventScriptPath,
+            'api-postman.scripts.pre-request.path' => $eventScriptPath,
+            'api-postman.scripts.test.path' => $eventScriptPath,
         ]);
 
         $this->artisan('export:collection')->assertExitCode(0);

@@ -50,25 +50,23 @@ final class PostmanExporter extends AbstractExporter
 
     protected function processEvents(array &$structure): void
     {
-        $preRequestPath = $this->config->get('api-postman.scripts.pre-request');
-        $testPath = $this->config->get('api-postman.scripts.test');
+        $preRequestScript = $this->getScript('pre-request');
+        $testScript = $this->getScript('test');
 
-        if ($preRequestPath || $testPath) {
+        if ($preRequestScript || $testScript) {
             $scripts = [
-                'prerequest' => $preRequestPath,
-                'test' => $testPath,
+                'prerequest' => $preRequestScript,
+                'test' => $testScript,
             ];
 
-            foreach ($scripts as $type => $path) {
-                if (file_exists($path)) {
-                    $structure['event'][] = [
-                        'listen' => $type,
-                        'script' => [
-                            'type' => 'text/javascript',
-                            'exec' => file_get_contents($path),
-                        ],
-                    ];
-                }
+            foreach ($scripts as $type => $script) {
+                $structure['event'][] = [
+                    'listen' => $type,
+                    'script' => [
+                        'type' => 'text/javascript',
+                        'exec' => $script,
+                    ],
+                ];
             }
         }
     }
