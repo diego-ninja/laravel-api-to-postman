@@ -6,5 +6,8 @@
     "commitizen": {
       "path": "./node_modules/git-cz"
     }
+  },
+  "dependencies": {
+    "@usebruno/schema": "^0.13.0"
   }
 }

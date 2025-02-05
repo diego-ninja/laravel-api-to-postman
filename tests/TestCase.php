@@ -12,7 +12,7 @@ class TestCase extends \Orchestra\Testbench\TestCase
         return ['AndreasElia\PostmanGenerator\CollectionGeneratorServiceProvider'];
     }
 
-    protected function defineRoutes($router): void
+    protected function defineRoutes($router)
     {
         $router->middleware('api')->prefix('example')->name('example.')->group(function ($router): void {
             $router->get('index', [ExampleController::class, 'index'])->name('index');

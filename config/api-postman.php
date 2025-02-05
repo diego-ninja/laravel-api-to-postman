@@ -73,16 +73,30 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Events
+    | Scripts
     |--------------------------------------------------------------------------
     |
-    | If you want to configure the prequest and test scripts for the collection,
+    | If you want to configure the pre-request, test and post-response scripts for the collection,
     | then please provide paths to the JavaScript files.
     |
     */
-
-    'prerequest_script' => '', // This script will execute before every request in the collection.
-    'test_script' => '', // This script will execute after every request in the collection.
+    'scripts' => [
+        'pre-request' => [
+            'path' => '',
+            'content' => '',
+            'enabled' => false,
+        ],
+        'post-response' => [
+            'path' => '',
+            'content' => '',
+            'enabled' => false,
+        ],
+        'test' => [
+            'path' => '',
+            'content' => '',
+            'enabled' => false,
+        ],
+    ],
 
     /*
     |--------------------------------------------------------------------------

@@ -3,271 +3,226 @@
 namespace AndreasElia\PostmanGenerator\Exporters;
 
 use AndreasElia\PostmanGenerator\DTO\Request;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use Illuminate\Support\Facades\File;
 
 final class BrunoExporter extends AbstractExporter
 {
-    protected array $brunoRequests = [];
-
+    private int $sequence = 1;
     protected function generateStructure(): array
     {
-        $basePath = Storage::path('bruno/' . Str::slug($this->filename));
-
-        $this->setupDirectories($basePath);
-        $this->createEnvironments($basePath);
-        $this->processRequests($basePath);
-
         return [
-            'name' => $this->filename,
+            'name' => 'laravel-api-to-bruno',
             'version' => '1',
-            'Bruno-Export' => true,
-            'requests' => $this->brunoRequests,
+            'items' => $this->processCollectionItems(),
             'environments' => [
-                'base_url' => $this->config->get('api-postman.base_url'),
-                'token' => $this->authentication?->getToken(),
+                $this->createEnvironment()
             ],
+            'brunoConfig' => [
+                'version' => '1',
+                'name' => 'laravel-api-to-bruno',
+                'type' => 'collection',
+                'ignore' => [
+                    'node_modules',
+                    '.git'
+                ]
+            ]
         ];
     }
 
-    protected function setupDirectories(string $basePath): void
+    protected function createEnvironment(): array
     {
-        if (!File::exists($basePath)) {
-            File::makeDirectory($basePath, 0755, true);
-        }
-
-        $envPath = $basePath . '/environments';
-        if (!File::exists($envPath)) {
-            File::makeDirectory($envPath);
-        }
-    }
-
-    protected function createEnvironments(string $basePath): void
-    {
-        $environments = [
-            'Local' => [
-                'base_url' => $this->config->get('api-postman.base_url'),
-            ],
+        $variables = [
+            [
+                'name' => 'base_url',
+                'value' => $this->config->get('api-postman.base_url'),
+                'type' => 'text',
+                'enabled' => true,
+                'secret' => false
+            ]
         ];
 
         if ($this->authentication) {
-            $environments['Local']['token'] = $this->authentication->getToken();
+            $variables[] = [
+                'name' => 'token',
+                'value' => $this->authentication->getToken(),
+                'type' => 'text',
+                'enabled' => true,
+                'secret' => true
+            ];
         }
 
-        foreach ($environments as $name => $vars) {
-            File::put(
-                $basePath . '/environments/' . Str::slug($name) . '.env.json',
-                json_encode(['variables' => $vars], JSON_PRETTY_PRINT)
-            );
-        }
-    }
-
-    protected function processRequests(string $basePath): void
-    {
-        if ($this->config->get('api-postman.structured')) {
-            $this->processStructuredRequests($basePath);
-        } else {
-            $this->processFlatRequests($basePath);
-        }
-    }
-
-    protected function processFlatRequests(string $basePath): void
-    {
-        $this->requests
-            ->filter(fn($request) => $request->method->value !== 'HEAD')
-            ->each(function($request) use ($basePath) {
-                $this->brunoRequests[] = $this->createRequestData($request);
-                $fileName = sprintf(
-                    '%s_%s.bru',
-                    strtolower($request->method->value),
-                    Str::slug($request->name)
-                );
-
-                File::put(
-                    $basePath . '/' . $fileName,
-                    $this->formatRequest($request)
-                );
-            });
-    }
-
-    protected function processStructuredRequests(string $basePath): void
-    {
-        $requests = $this->requests->filter(fn($request) => $request->method->value !== 'HEAD');
-
-        $basePrefix = '';
-        if ($firstRequest = $requests->first()) {
-            $segments = array_values(array_filter(explode('/', trim($firstRequest->uri, '/'))));
-            $basePrefix = $segments[0] ?? '';
-        }
-
-        if ($basePrefix) {
-            $basePrefixPath = $basePath . '/' . $basePrefix;
-            if (!File::exists($basePrefixPath)) {
-                File::makeDirectory($basePrefixPath, 0755, true);
-            }
-        }
-
-        foreach ($requests as $request) {
-            $this->brunoRequests[] = $this->createRequestData($request);
-
-            $segments = array_values(array_filter(explode('/', trim($request->uri, '/'))));
-
-            if (count($segments) <= 2) {
-                $this->createRequestFile($basePrefixPath ?? $basePath, $request);
-                continue;
-            }
-
-            $currentPath = $basePrefixPath ?? $basePath;
-            $resourcePath = [];
-
-            for ($i = 1; $i < count($segments); $i++) {
-                $segment = $segments[$i];
-
-                if (str_starts_with($segment, '{')) {
-                    continue;
-                }
-
-                $resourcePath[] = $segment;
-                $nextPath = $currentPath . '/' . $segment;
-
-                if (!File::exists($nextPath)) {
-                    File::makeDirectory($nextPath, 0755, true);
-                }
-
-                $currentPath = $nextPath;
-            }
-
-            $this->createRequestFile($currentPath, $request);
-        }
-    }
-    protected function createRequestFile(string $path, Request $request): void
-    {
-        $action = $this->getRequestAction($request);
-        $method = strtolower($request->method->value);
-
-        $fileName = sprintf('%s_%s.bru', $method, $action);
-
-        File::put(
-            $path . '/' . $fileName,
-            $this->formatRequest($request)
-        );
-    }
-
-    protected function getRequestAction(Request $request): string
-    {
-        if ($request->name) {
-            $parts = explode('.', $request->name);
-
-            if (count($parts) >= 3) {
-                return end($parts);
-            }
-
-            $lastPart = end($parts);
-            if ($lastPart !== 'index') {
-                return $lastPart;
-            }
-        }
-
-        return $request->method->action() ?? $request->method->value;
-    }
-
-    protected function createRequestData(Request $request, ?string $group = null): array
-    {
         return [
-            'name' => $this->getRequestName($request),
-            'method' => $request->method->value,
-            'url' => $this->formatUrl($request),
-            'description' => $request->description,
-            'group' => $group,
-            'auth' => $this->formatAuthentication(),
-            'headers' => $request->headers->formatted(),
-            'body' => $request->body,
+            'uid' => $this->generateUid(),
+            'name' => 'Local',
+            'variables' => $variables
         ];
     }
 
-    protected function formatRequest(Request $request): string
+    protected function processCollectionItems(): array
     {
-        $template = $this->getStubContent('bruno.request.stub');
-
-        return sprintf(
-            $template,
-            $this->getRequestName($request),
-            $this->formatDescription($request),
-            strtolower($request->method->value),
-            $this->formatUrl($request),
-            $this->formatAuthentication(),
-            $this->formatHeaders($request),
-            $this->formatBody($request)
-        );
+        return [
+            [
+                'type' => 'folder',
+                'name' => $this->config->get('app.name'),
+                'items' => $this->config->get('api-postman.structured')
+                    ? $this->processStructuredRequests()
+                    : $this->processFlatRequests()
+            ]
+        ];
     }
 
-    protected function getStubContent(string $stubName): string
+    protected function processFlatRequests(): array
     {
-        $stubPath = __DIR__ . '/../../stubs/' . $stubName;
-
-        if (!File::exists($stubPath)) {
-            throw new \RuntimeException(sprintf('Stub file %s does not exist', $stubPath));
-        }
-
-        return File::get($stubPath);
+        return $this->requests
+            ->filter(fn($request) => $request->method->value !== 'HEAD')
+            ->map(fn($request) => $this->createRequestItem($request))
+            ->values()
+            ->all();
     }
 
-    protected function formatDescription(Request $request): string
+    protected function processStructuredRequests(): array
     {
-        if (empty($request->description)) {
-            return '';
-        }
+        $groups = $this->requests
+            ->filter(fn($request) => $request->method->value !== 'HEAD')
+            ->groupBy(function(Request $request) {
+                $segments = explode('/', trim($request->uri, '/'));
+                return $segments[0] ?? '';
+            });
 
-        return "# " . str_replace("\n", "\n# ", $request->description) . "\n";
+        return $groups->map(function($requests, $group) {
+            return [
+                'type' => 'folder',
+                'name' => Str::title($group),
+                'items' => $requests->map(fn($request) => $this->createRequestItem($request))->values()->all()
+            ];
+        })->values()->all();
+    }
+
+    protected function createRequestItem(Request $request): array
+    {
+        return [
+            'uid' => $this->generateUid(),
+            'type' => 'http-request',
+            'name' => $this->getRequestName($request),
+            'seq' => $this->sequence++,
+            'request' => [
+                'url' => $this->formatUrl($request),
+                'method' => $request->method->value,
+                'headers' => $this->formatHeaders($request),
+                'params' => $this->formatParams($request),
+                'body' => $this->formatBody($request),
+                'script' => $this->formatScripts(),
+                'vars' => [
+                    'req' => null,
+                    'res' => null
+                ],
+                'assertions' => [],
+                'tests' => '',
+                'docs' => $request->description ?? '',
+                'auth' => $this->formatAuthentication()
+            ]
+        ];
+    }
+
+    protected function formatScripts(): array
+    {
+        $scripts = [
+            'req' => $this->getScript('pre-request'),
+            'res' => $this->getScript('post-response')
+        ];
+
+        return array_filter($scripts);
     }
 
     protected function formatUrl(Request $request): string
     {
-        $path = trim($request->uri, '/');
-        // Keep {param} format for Bruno
-        return "/{$path}";
+        $url = trim($request->uri, '/');
+        return '{{ base_url }}/' . $url;
     }
 
-    protected function formatHeaders(Request $request): string
+    protected function formatHeaders(Request $request): array
     {
-        return $request->headers
-            ->map(fn ($header) => "  {$header->key}: {$header->value}")
-            ->implode("\n");
+        return $request->headers->map(function($header) {
+            return [
+                'uid' => $this->generateUid(),
+                'name' => $header->key,
+                'value' => $header->value,
+                'description' => null,
+                'enabled' => true
+            ];
+        })->values()->all();
     }
 
-    protected function formatAuthentication(): string
+    protected function formatParams(Request $request): array
+    {
+        return $request->parameters
+            ->map(function($parameter) {
+                return [
+                    'uid' => $this->generateUid(),
+                    'name' => $parameter->name,
+                    'value' => $parameter->value,
+                    'description' => $parameter->description,
+                    'type' => 'query',
+                    'enabled' => !$parameter->disabled
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    protected function formatAuthentication(): array
     {
         if (!$this->authentication) {
-            return 'none';
+            return ['mode' => 'none'];
         }
 
-        $type = $this->authentication->getType();
-        return match ($type) {
-            'bearer' => 'bearer',
-            'basic' => 'basic',
-            default => 'none'
-        };
+        $auth = [
+            'mode' => $this->authentication->getType()
+        ];
+
+        if ($this->authentication->getType() === 'bearer') {
+            $auth['bearer'] = ['token' => '{{token}}'];
+        } elseif ($this->authentication->getType() === 'basic') {
+            $auth['basic'] = [
+                'username' => '',
+                'password' => '{{token}}'
+            ];
+        }
+
+        return $auth;
     }
 
-    protected function formatBody(Request $request): string
+    protected function formatBody(Request $request): array
     {
+        $body = [
+            'mode' => 'none',
+            'json' => null,
+            'text' => null,
+            'xml' => null,
+            'graphql' => null,
+            'formUrlEncoded' => [],
+            'multipartForm' => []
+        ];
+
         if (!$request->body) {
-            return '';
+            return $body;
         }
 
-        $body = "body:form-urlencoded {\n";
-        foreach ($request->body['urlencoded'] as $param) {
-            $value = $param['value'] ?? '';
-            $body .= "  {$param['key']}: {$value}";
-
-            if (!empty($param['description'])) {
-                $body .= " # {$param['description']}";
-            }
-
-            $body .= "\n";
+        if (isset($request->body['urlencoded'])) {
+            $body['mode'] = 'formUrlEncoded';
+            $body['formUrlEncoded'] = collect($request->body['urlencoded'])
+                ->map(function($param) {
+                    return [
+                        'uid' => $this->generateUid(),
+                        'name' => $param['key'],
+                        'value' => $param['value'] ?? '',
+                        'description' => $param['description'] ?? null,
+                        'enabled' => true
+                    ];
+                })
+                ->values()
+                ->all();
         }
-        $body .= "}\n";
 
         return $body;
     }
@@ -279,5 +234,10 @@ final class BrunoExporter extends AbstractExporter
         }
 
         return $request->name;
+    }
+
+    protected function generateUid(): string
+    {
+        return Str::random(21);
     }
 }

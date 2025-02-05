@@ -4,29 +4,35 @@ namespace AndreasElia\PostmanGenerator\Tests\Fixtures;
 
 trait BrunoCollectionHelpersTrait
 {
-    private function retrieveRoutes(string $bruFile): int
+    private function retrieveRoutes(array $route): int
     {
-        $content = file_get_contents($bruFile);
+        if ($route['type'] === 'folder') {
+            $sum = 0;
+            foreach ($route['items'] as $item) {
+                $sum += $this->retrieveRoutes($item);
+            }
+            return $sum;
+        }
 
-        // Skip if not a valid .bru file
-        if (!str_contains($content, 'meta {')) {
+        if (isset($route['request']['method']) && $route['request']['method'] === 'PATCH') {
             return 0;
         }
 
-        // Skip HEAD routes
-        if (preg_match('/patch\s*{/', $content)) {
-            return 0;
+        // For Bruno JSON format
+        if ($route['type'] === 'http-request') {
+            return 1;
         }
 
-        return 1;
+        return 0;
     }
 
-    private function countCollectionItems(array $bruFiles): int
+    private function countCollectionItems(array $collectionItems): int
     {
         $sum = 0;
-        foreach ($bruFiles as $file) {
-            $sum += $this->retrieveRoutes($file);
+        foreach ($collectionItems as $item) {
+            $sum += $this->retrieveRoutes($item);
         }
+
         return $sum;
     }
 }

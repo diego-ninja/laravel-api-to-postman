@@ -8,6 +8,7 @@ use AndreasElia\PostmanGenerator\Concerns\HasAuthentication;
 use AndreasElia\PostmanGenerator\Contracts\Exporter;
 use AndreasElia\PostmanGenerator\Processors\RouteProcessor;
 use Illuminate\Config\Repository;
+use Illuminate\Support\Facades\File;
 use ReflectionException;
 
 abstract class AbstractExporter implements Exporter
@@ -48,5 +49,20 @@ abstract class AbstractExporter implements Exporter
     {
         $this->authentication = $authentication;
         return $this;
+    }
+
+    protected function getScript(string $type): ?string
+    {
+        $scriptConfig = $this->config->get(sprintf('api-postman.scripts.%s', $type));
+
+        if (!empty($scriptConfig['content'])) {
+            return $scriptConfig['content'];
+        }
+
+        if (!empty($scriptConfig['path']) && File::exists($scriptConfig['path'])) {
+            return File::get($scriptConfig['path']);
+        }
+
+        return null;
     }
 }

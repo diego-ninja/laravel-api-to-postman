@@ -4,6 +4,7 @@ namespace AndreasElia\PostmanGenerator\Tests\Feature;
 
 use AndreasElia\PostmanGenerator\Tests\Fixtures\BrunoCollectionHelpersTrait;
 use AndreasElia\PostmanGenerator\Tests\TestCase;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Attributes\DataProvider;
 
@@ -15,7 +16,7 @@ class ExportBrunoCollectionTest extends TestCase
     {
         parent::setUp();
 
-        config()->set('api-postman.filename', 'test-api');
+        config()->set('api-postman.filename', 'test.json');
         config()->set('api-postman.base_url', 'http://api.test');
 
         Storage::disk()->deleteDirectory('bruno');
@@ -28,22 +29,41 @@ class ExportBrunoCollectionTest extends TestCase
 
         $this->artisan('export:collection --format=bruno')->assertExitCode(0);
 
-        $basePath = Storage::path('bruno/test-api');
+        $collection = json_decode(Storage::get('bruno/' . config('api-postman.filename')), true);
 
-        // Verify directory structure
-        $this->assertDirectoryExists($basePath);
-        $this->assertDirectoryExists($basePath . '/environments');
+        // Verify basic structure
+        $this->assertEquals('laravel-api-to-bruno', $collection['name']);
+        $this->assertEquals('1', $collection['version']);
+        $this->assertArrayHasKey('items', $collection);
+        $this->assertArrayHasKey('environments', $collection);
+        $this->assertArrayHasKey('brunoConfig', $collection);
 
-        // Verify environment file
-        $envContent = json_decode(file_get_contents($basePath . '/environments/local.env.json'), true);
-        $this->assertArrayHasKey('variables', $envContent);
-        $this->assertEquals('http://api.test', $envContent['variables']['base_url']);
+        // Verify main folder
+        $mainFolder = Arr::first($collection['items']);
+        $this->assertEquals('folder', $mainFolder['type']);
+        $this->assertEquals('Laravel', $mainFolder['name']);
+        $this->assertArrayHasKey('items', $mainFolder);
 
-        // Count and verify .bru files
-        $requests = $this->countCollectionItems(glob($basePath . '/*.bru'));
+        // Verify requests
+        $requests = $mainFolder['items'];
         $routes = $this->app['router']->getRoutes();
 
-        $this->assertEquals(count($routes), $requests);
+        $this->assertEquals(count($routes), $this->countCollectionItems($requests));
+
+        // Verify request structure for first request
+        $firstRequest = Arr::first($requests);
+        $this->assertEquals('http-request', $firstRequest['type']);
+        $this->assertEquals(1, $firstRequest['seq']);
+        $this->assertMatchesRegularExpression('/^[a-zA-Z0-9]{21}$/', $firstRequest['uid']);
+        $this->assertArrayHasKey('request', $firstRequest);
+
+        $requestDetails = $firstRequest['request'];
+        $this->assertArrayHasKey('url', $requestDetails);
+        $this->assertArrayHasKey('method', $requestDetails);
+        $this->assertArrayHasKey('headers', $requestDetails);
+        $this->assertArrayHasKey('params', $requestDetails);
+        $this->assertArrayHasKey('body', $requestDetails);
+        $this->assertArrayHasKey('script', $requestDetails);
     }
 
     #[DataProvider('providerFormDataEnabled')]
@@ -56,111 +76,101 @@ class ExportBrunoCollectionTest extends TestCase
 
         $this->artisan('export:collection --format=bruno')->assertExitCode(0);
 
-        $basePath = Storage::path('bruno/test-api');
+        $collection = json_decode(Storage::get('bruno/' . config('api-postman.filename')), true);
 
-        // Verify folder structure exists
-        $this->assertDirectoryExists($basePath);
+        $mainFolder = Arr::first($collection['items']);
+        $folders = array_filter($mainFolder['items'], fn($item) => $item['type'] === 'folder');
 
-        // Get all directories excluding 'environments'
-        $folders = array_filter(glob($basePath . '/*'), 'is_dir');
-        $folders = array_filter($folders, fn($folder) => !str_ends_with($folder, 'environments'));
-
-        // Should have at least one folder for routes
         $this->assertNotEmpty($folders);
 
-        // Function to recursively find .bru files
-        $findBruFiles = function($dir) use (&$findBruFiles) {
-            $files = [];
-            $contents = glob($dir . '/*');
-
-            foreach ($contents as $item) {
-                if (is_dir($item)) {
-                    $files = array_merge($files, $findBruFiles($item));
-                } elseif (str_ends_with($item, '.bru')) {
-                    $files[] = $item;
-                }
-            }
-
-            return $files;
-        };
-
-        // Count total .bru files in all subfolders
-        $totalFiles = 0;
+        $totalRequests = 0;
+        $allSequences = [];
         foreach ($folders as $folder) {
-            $bruFiles = $findBruFiles($folder);
-            $totalFiles += $this->countCollectionItems($bruFiles);
+            $requests = array_filter($folder['items'], fn($item) => $item['type'] === 'http-request' && $item['request']['method'] !== 'PATCH');
+            $totalRequests += count($requests);
+            $sequences = array_column($requests, 'seq');
+            $allSequences = array_merge($allSequences, $sequences);
         }
 
         $routes = $this->app['router']->getRoutes();
-        $this->assertEquals(count($routes), $totalFiles);
+        $this->assertEquals(count($routes), $totalRequests);
     }
 
-    #[DataProvider('providerFormDataEnabled')]
-    public function test_bearer_auth_export_works(bool $formDataEnabled): void
+    public function test_scripts_are_included_when_configured(): void
     {
-        config()->set('api-postman.enable_formdata', $formDataEnabled);
+        $preRequestScript = 'console.log("Pre-request")';
+        $postResponseScript = 'console.log("Post-response")';
 
-        $this->artisan('export:collection --format=bruno --bearer=1234567890')->assertExitCode(0);
+        config([
+            'api-postman.scripts.pre-request.content' => $preRequestScript,
+            'api-postman.scripts.post-response.content' => $postResponseScript,
+        ]);
 
-        $basePath = Storage::path('bruno/test-api');
-
-        // Verify token in environment
-        $envContent = json_decode(file_get_contents($basePath . '/environments/local.env.json'), true);
-        $this->assertEquals('1234567890', $envContent['variables']['token']);
-
-        // Verify auth in .bru files
-        $bruFiles = glob($basePath . '/*.bru');
-        foreach ($bruFiles as $file) {
-            $content = file_get_contents($file);
-            if (preg_match('/auth: (.+)/', $content, $matches)) {
-                $this->assertEquals('bearer', trim($matches[1]));
-            }
-        }
-    }
-
-    #[DataProvider('providerFormDataEnabled')]
-    public function test_basic_auth_export_works(bool $formDataEnabled): void
-    {
-        config()->set('api-postman.enable_formdata', $formDataEnabled);
-
-        $this->artisan('export:collection --format=bruno --basic=username:password1234')->assertExitCode(0);
-
-        $basePath = Storage::path('bruno/test-api');
-
-        // Verify credentials in environment
-        $envContent = json_decode(file_get_contents($basePath . '/environments/local.env.json'), true);
-        $this->assertEquals('username:password1234', $envContent['variables']['token']);
-
-        // Verify auth in .bru files
-        $bruFiles = glob($basePath . '/*.bru');
-        foreach ($bruFiles as $file) {
-            $content = file_get_contents($file);
-            if (preg_match('/auth: (.+)/', $content, $matches)) {
-                $this->assertEquals('basic', trim($matches[1]));
-            }
-        }
-    }
-
-    public function test_request_format_is_correct(): void
-    {
         $this->artisan('export:collection --format=bruno')->assertExitCode(0);
 
-        $basePath = Storage::path('bruno/test-api');
+        $collection = json_decode(Storage::get('bruno/' . config('api-postman.filename')), true);
 
-        $bruFiles = glob($basePath . '/*.bru');
-        $this->assertNotEmpty($bruFiles);
+        $mainFolder = Arr::first($collection['items']);
+        $firstRequest = Arr::first($mainFolder['items']);
 
-        $content = file_get_contents($bruFiles[0]);
+        $this->assertEquals($preRequestScript, $firstRequest['request']['script']['req']);
+        $this->assertEquals($postResponseScript, $firstRequest['request']['script']['res']);
+    }
 
-        // Check basic structure
-        $this->assertStringContainsString('meta {', $content);
-        $this->assertStringContainsString('type: http', $content);
+    public function test_environment_variables_format(): void
+    {
+        $this->artisan('export:collection --format=bruno --bearer=test-token')->assertExitCode(0);
 
-        // Check URL format
-        $this->assertMatchesRegularExpression('/url: \{\{ base_url }}\/.*/', $content);
+        $collection = json_decode(Storage::get('bruno/' . config('api-postman.filename')), true);
 
-        // Check headers section exists
-        $this->assertStringContainsString('headers {', $content);
+        $environment = Arr::first($collection['environments']);
+
+        $this->assertArrayHasKey('uid', $environment);
+        $this->assertEquals('Local', $environment['name']);
+
+        $baseUrlVar = Arr::first($environment['variables']);
+        $this->assertEquals('base_url', $baseUrlVar['name']);
+        $this->assertEquals('http://api.test', $baseUrlVar['value']);
+        $this->assertEquals('text', $baseUrlVar['type']);
+        $this->assertTrue($baseUrlVar['enabled']);
+        $this->assertFalse($baseUrlVar['secret']);
+
+        $tokenVar = Arr::where($environment['variables'], fn($var) => $var['name'] === 'token');
+        $tokenVar = reset($tokenVar);
+        $this->assertEquals('test-token', $tokenVar['value']);
+        $this->assertTrue($tokenVar['secret']);
+    }
+
+    public function test_request_body_formats(): void
+    {
+        config([
+            'api-postman.enable_formdata' => true,
+        ]);
+
+        $this->artisan('export:collection --format=bruno')->assertExitCode(0);
+
+        $collection = json_decode(Storage::get('bruno/' . config('api-postman.filename')), true);
+        $mainFolder = Arr::first($collection['items']);
+        $request = Arr::first($mainFolder['items']);
+
+        $body = $request['request']['body'];
+
+        $this->assertArrayHasKey('mode', $body);
+        $this->assertArrayHasKey('json', $body);
+        $this->assertArrayHasKey('text', $body);
+        $this->assertArrayHasKey('xml', $body);
+        $this->assertArrayHasKey('graphql', $body);
+        $this->assertArrayHasKey('formUrlEncoded', $body);
+        $this->assertArrayHasKey('multipartForm', $body);
+
+        if ($body['mode'] === 'formUrlEncoded') {
+            $formParam = Arr::first($body['formUrlEncoded']);
+            $this->assertArrayHasKey('uid', $formParam);
+            $this->assertArrayHasKey('name', $formParam);
+            $this->assertArrayHasKey('value', $formParam);
+            $this->assertArrayHasKey('description', $formParam);
+            $this->assertArrayHasKey('enabled', $formParam);
+        }
     }
 
     public static function providerFormDataEnabled(): array

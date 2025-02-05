@@ -98,6 +98,8 @@ final class InsomniaExporter extends AbstractExporter
                 'name' => $groupName,
                 'description' => '',
                 'scope' => 'collection',
+                'preRequestScript' => $this->getScript('pre-request'),
+                'afterResponseScript' => $this->getScript('post-response'),
             ];
 
             // Add requests to folder
@@ -128,6 +130,7 @@ final class InsomniaExporter extends AbstractExporter
             'settingDisableRenderRequestBody' => false,
             'settingEncodeUrl' => true,
             'settingFollowRedirects' => 'global',
+            'settingRebuildPath' => true,
         ];
 
         if ($this->config->get('api-postman.protocol_profile_behavior.disable_body_pruning')) {
@@ -144,7 +147,6 @@ final class InsomniaExporter extends AbstractExporter
         $baseUrl = '{{ base_url }}';
         $path = mb_trim($request->uri, '/');
 
-        // Replace {param} with :param for Insomnia format
         $path = preg_replace('/\{([^}]+)}/', ':$1', $path);
 
         return "{$baseUrl}/{$path}";
