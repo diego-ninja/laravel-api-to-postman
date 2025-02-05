@@ -4,6 +4,8 @@
     "keywords": [
         "laravel",
         "postman",
+        "insomnia",
+        "bruno",
         "api",
         "collection",
         "generate"
@@ -39,7 +41,7 @@
     "extra": {
         "laravel": {
             "providers": [
-                "CollectionGeneratorServiceProvider"
+                "AndreasElia\\PostmanGenerator\\CollectionGeneratorServiceProvider"
             ]
         }
     },
