@@ -7,7 +7,7 @@ use AndreasElia\PostmanGenerator\Tests\Fixtures\ExampleController;
 
 class TestCase extends \Orchestra\Testbench\TestCase
 {
-    protected function getPackageProviders($app)
+    protected function getPackageProviders($app): array
     {
         return ['AndreasElia\PostmanGenerator\CollectionGeneratorServiceProvider'];
     }

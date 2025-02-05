@@ -1,0 +1,19 @@
+meta {
+  name: %s
+  type: http
+  seq: 1
+}
+
+%s
+
+%s {
+  url: {{ base_url }}%s
+  body: none
+  auth: %s
+}
+
+headers {
+%s
+}
+
+%s

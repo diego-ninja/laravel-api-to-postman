@@ -4,7 +4,8 @@ namespace AndreasElia\PostmanGenerator\Commands;
 
 use AndreasElia\PostmanGenerator\Authentication\Basic;
 use AndreasElia\PostmanGenerator\Authentication\Bearer;
-use AndreasElia\PostmanGenerator\Enums\CollectionFormat;
+use AndreasElia\PostmanGenerator\Enums\Format;
+use AndreasElia\PostmanGenerator\Exporters\BrunoExporter;
 use AndreasElia\PostmanGenerator\Exporters\InsomniaExporter;
 use AndreasElia\PostmanGenerator\Exporters\PostmanExporter;
 use Illuminate\Console\Command;
@@ -15,7 +16,7 @@ class ExportCollectionCommand extends Command
 {
     /** @var string */
     protected $signature = 'export:collection
-                            {--format= : The format for the collection [postman|insomnia](default: postman)}
+                            {--format= : The format for the collection [postman|insomnia|bruno](default: postman)}
                             {--bearer= : The bearer token to use on your endpoints}
                             {--basic= : The basic auth to use on your endpoints}';
 
@@ -24,7 +25,7 @@ class ExportCollectionCommand extends Command
 
     public function handle(): void
     {
-        $format = CollectionFormat::tryFrom($this->option('format')) ?? CollectionFormat::Postman;
+        $format = Format::tryFrom($this->option('format')) ?? Format::Postman;
 
         $filename = str_replace(
             ['{timestamp}', '{app}', '{format}'],
@@ -38,8 +39,9 @@ class ExportCollectionCommand extends Command
         ]);
 
         $exporter = match ($format) {
-            CollectionFormat::Insomnia => app(InsomniaExporter::class),
-            default => app(PostmanExporter::class),
+            Format::Insomnia => app(InsomniaExporter::class),
+            Format::Bruno => app(BrunoExporter::class),
+            Format::Postman => app(PostmanExporter::class),
         };
 
         $exporter
