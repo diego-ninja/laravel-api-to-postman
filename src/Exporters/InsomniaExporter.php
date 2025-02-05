@@ -44,27 +44,21 @@ final class InsomniaExporter extends AbstractExporter
 
     protected function createEnvironment(): array
     {
-        $environment = [
+        $data = [
             '_id' => 'env_' . Str::uuid()->toString(),
             '_type' => 'environment',
             'parentId' => $this->workspaceId,
             'name' => 'Base Environment',
             'data' => [
-                [
-                    'name' => 'base_url',
-                    'value' => $this->config->get('api-postman.base_url'),
-                ]
-            ],
+                'base_url' => $this->config->get('api-postman.base_url')
+            ]
         ];
 
         if ($this->authentication) {
-            $environment['data'][] = [
-                'name' => 'token',
-                'value' => $this->authentication->getToken(),
-            ];
+            $data['data']['token'] = $this->authentication->getToken();
         }
 
-        return $environment;
+        return $data;
     }
 
     protected function processRequests(): array
