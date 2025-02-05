@@ -7,8 +7,11 @@ use Illuminate\Support\Str;
 
 final class InsomniaExporter extends AbstractExporter
 {
+    private string $workspaceId;
     protected function generateStructure(): array
     {
+        $this->workspaceId = 'wrk_' . Str::uuid()->toString();
+
         return [
             '_type' => 'export',
             '__export_format' => 4,
@@ -30,7 +33,7 @@ final class InsomniaExporter extends AbstractExporter
     protected function createWorkspace(): array
     {
         return [
-            '_id' => 'wrk_' . Str::uuid()->toString(),
+            '_id' => $this->workspaceId,
             '_type' => 'workspace',
             'parentId' => null,
             'name' => $this->filename,
@@ -44,13 +47,13 @@ final class InsomniaExporter extends AbstractExporter
         $environment = [
             '_id' => 'env_' . Str::uuid()->toString(),
             '_type' => 'environment',
-            'parentId' => 'wrk_' . Str::uuid()->toString(),
+            'parentId' => $this->workspaceId,
             'name' => 'Base Environment',
             'data' => [
                 [
                     'name' => 'base_url',
                     'value' => $this->config->get('api-postman.base_url'),
-                ],
+                ]
             ],
         ];
 
@@ -75,7 +78,7 @@ final class InsomniaExporter extends AbstractExporter
     {
         return $this->requests
             ->filter(fn(Request $request) => 'HEAD' !== $request->method->value)
-            ->map(fn($request) => $this->createRequestResource($request))
+            ->map(fn($request) => $this->createRequestResource($request, $this->workspaceId))
             ->values()
             ->all();
     }
@@ -94,8 +97,8 @@ final class InsomniaExporter extends AbstractExporter
             $resources[] = [
                 '_id' => $folderId,
                 '_type' => 'request_group',
-                'parentId' => 'wrk_' . Str::uuid()->toString(),
-                'name' => $groupName,
+                'parentId' => $this->workspaceId,
+                'name' => Str::title($groupName),
                 'description' => '',
                 'scope' => 'collection',
                 'preRequestScript' => $this->getScript('pre-request'),
@@ -116,7 +119,7 @@ final class InsomniaExporter extends AbstractExporter
         $requestResource = [
             '_id' => 'req_' . Str::uuid()->toString(),
             '_type' => 'request',
-            'parentId' => $parentId ?? 'wrk_' . Str::uuid()->toString(),
+            'parentId' => $parentId,
             'name' => $this->getRequestName($request),
             'description' => $request->description,
             'method' => $request->method->value,
