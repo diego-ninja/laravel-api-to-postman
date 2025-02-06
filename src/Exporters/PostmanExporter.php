@@ -16,8 +16,7 @@ final class PostmanExporter extends AbstractExporter
                 ],
             ],
             'info' => [
-                'name' => $this->filename,
-                '_postman_id' => $this->config->get('api-postman.postman_id'),
+                'name' => $this->config->get('api-postman.name'),
                 'description' => $this->config->get('app.description'),
                 'schema' => 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
             ],
@@ -87,21 +86,47 @@ final class PostmanExporter extends AbstractExporter
 
     protected function processStructuredRequests(): array
     {
-        return $this->requests->groupByPath()
-            ->map(fn($requests, $group) => [
-                'name' => $group,
-                'item' => $requests->map(fn($request) => $this->createRequestItem($request))
-                    ->values()
-                    ->all(),
-            ])
-            ->values()
-            ->all();
+        return $this->processNestedGroups($this->requests->groupByNestedPath());
+    }
+
+    protected function processNestedGroups(array $groups, string $parentPath = ''): array
+    {
+        $items = [];
+
+        foreach ($groups as $segment => $data) {
+            $currentPath = $parentPath . ($parentPath ? '/' : '') . $segment;
+
+            $folder = [
+                'name' => $segment,
+                'item' => []
+            ];
+
+            // Add requests to current folder
+            foreach ($data['requests'] as $request) {
+                $folder['item'][] = $this->createRequestItem($request);
+            }
+
+            // Process nested folders
+            if (!empty($data['children'])) {
+                $folder['item'] = array_merge(
+                    $folder['item'],
+                    $this->processNestedGroups($data['children'], $currentPath)
+                );
+            }
+
+            $items[] = $folder;
+        }
+
+        return $items;
     }
 
     protected function createRequestItem(Request $request): array
     {
         return [
-            'name' => $this->getRequestName($request),
+            'name' => $request->getName(
+                $this->config->get('api-postman.structured') &&
+                $this->config->get('api-postman.crud_folders')
+            ),
             'request' => [
                 'method' => $request->method,
                 'header' => $request->headers->formatted(),
@@ -112,14 +137,4 @@ final class PostmanExporter extends AbstractExporter
             'response' => [],
         ];
     }
-
-    protected function getRequestName(Request $request): string
-    {
-        if ($this->config->get('api-postman.structured') && $this->config->get('api-postman.crud_folders')) {
-            return $request->method->action() ?? $request->method->value;
-        }
-
-        return $request->name;
-    }
-
 }

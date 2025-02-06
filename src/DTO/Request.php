@@ -40,6 +40,15 @@ final readonly class Request implements JsonSerializable
         );
     }
 
+    public function getName(?bool $useCrudFolders): string
+    {
+        if ($useCrudFolders) {
+            return $this->method->action() ?? $this->name;
+        }
+
+        return $this->name;
+    }
+
     public function array(): array
     {
         return [

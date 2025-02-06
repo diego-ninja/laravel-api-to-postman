@@ -3,6 +3,7 @@
 namespace AndreasElia\PostmanGenerator\Exporters;
 
 use AndreasElia\PostmanGenerator\DTO\Request;
+use AndreasElia\PostmanGenerator\Enums\Method;
 use Illuminate\Support\Str;
 
 final class InsomniaExporter extends AbstractExporter
@@ -36,7 +37,7 @@ final class InsomniaExporter extends AbstractExporter
             '_id' => $this->workspaceId,
             '_type' => 'workspace',
             'parentId' => null,
-            'name' => $this->filename,
+            'name' => $this->config->get('api-postman.name'),
             'description' => $this->config->get('app.description'),
             'scope' => 'collection',
         ];
@@ -71,8 +72,8 @@ final class InsomniaExporter extends AbstractExporter
     protected function processFlatRequests(): array
     {
         return $this->requests
-            ->filter(fn(Request $request) => 'HEAD' !== $request->method->value)
-            ->map(fn($request) => $this->createRequestResource($request, $this->workspaceId))
+            ->filter(fn(Request $request) => Method::HEAD !== $request->method)
+            ->map(fn(Request $request) => $this->createRequestResource($request, $this->workspaceId))
             ->values()
             ->all();
     }
@@ -80,32 +81,42 @@ final class InsomniaExporter extends AbstractExporter
     protected function processStructuredRequests(): array
     {
         $resources = [];
-        $groups = $this->requests
-            ->filter(fn(Request $request) => 'HEAD' !== $request->method->value)
-            ->groupByPath();
+        $grouped = $this->requests
+            ->filter(fn(Request $request) => Method::HEAD !== $request->method)
+            ->groupByNestedPath();
 
-        foreach ($groups as $groupName => $groupRequests) {
+        $this->processNestedGroups($grouped, $resources);
+
+        return $resources;
+    }
+
+    protected function processNestedGroups(array $groups, array &$resources, ?string $parentId = null): void
+    {
+        $parentId = $parentId ?? $this->workspaceId;
+
+        foreach ($groups as $segment => $data) {
             $folderId = 'fld_' . Str::uuid()->toString();
 
-            // Add folder
+            // Create folder
             $resources[] = [
                 '_id' => $folderId,
                 '_type' => 'request_group',
-                'parentId' => $this->workspaceId,
-                'name' => Str::title($groupName),
+                'parentId' => $parentId,
+                'name' => Str::title($segment),
                 'description' => '',
                 'scope' => 'collection',
-                'preRequestScript' => $this->getScript('pre-request'),
-                'afterResponseScript' => $this->getScript('post-response'),
             ];
 
-            // Add requests to folder
-            foreach ($groupRequests as $request) {
+            // Add requests to current folder
+            foreach ($data['requests'] as $request) {
                 $resources[] = $this->createRequestResource($request, $folderId);
             }
-        }
 
-        return $resources;
+            // Process nested folders
+            if (!empty($data['children'])) {
+                $this->processNestedGroups($data['children'], $resources, $folderId);
+            }
+        }
     }
 
     protected function createRequestResource(Request $request, ?string $parentId = null): array
@@ -114,7 +125,10 @@ final class InsomniaExporter extends AbstractExporter
             '_id' => 'req_' . Str::uuid()->toString(),
             '_type' => 'request',
             'parentId' => $parentId,
-            'name' => $this->getRequestName($request),
+            'name' => $request->getName(
+                $this->config->get('api-postman.structured') &&
+                $this->config->get('api-postman.crud_folders')
+            ),
             'description' => $request->description,
             'method' => $request->method->value,
             'url' => $this->formatUrl($request),
@@ -204,14 +218,5 @@ final class InsomniaExporter extends AbstractExporter
                 ->values()
                 ->all(),
         ];
-    }
-
-    protected function getRequestName(Request $request): string
-    {
-        if ($this->config->get('api-postman.structured') && $this->config->get('api-postman.crud_folders')) {
-            return $request->method->action() ?? $request->method->value;
-        }
-
-        return $request->name;
     }
 }

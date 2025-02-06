@@ -53,7 +53,7 @@ class ExportInsomniaCollectionTest extends TestCase
         $environment = Arr::first($collection['resources'], fn($r) => 'environment' === $r['_type']);
         $this->assertNotNull($environment);
         $this->assertStringStartsWith('env_', $environment['_id']);
-        $this->assertEquals('http://api.test', Arr::first($environment['data'])['value']);
+        $this->assertEquals('http://api.test', Arr::first($environment['data']));
 
         // Verify requests
         $requests = Arr::where($collection['resources'], fn($r) => 'request' === $r['_type']);
@@ -85,8 +85,8 @@ class ExportInsomniaCollectionTest extends TestCase
 
         // Verify environment token
         $environment = Arr::first($collection['resources'], fn($r) => 'environment' === $r['_type']);
-        $tokenVariable = Arr::first($environment['data'], fn($d) => 'token' === $d['name']);
-        $this->assertEquals('1234567890', $tokenVariable['value']);
+        $tokenVariable = Arr::get($environment['data'], 'token');
+        $this->assertEquals('1234567890', $tokenVariable);
 
         // Verify requests authentication
         $requests = Arr::where($collection['resources'], fn($r) => 'request' === $r['_type']);
@@ -112,8 +112,8 @@ class ExportInsomniaCollectionTest extends TestCase
 
         // Verify environment token
         $environment = Arr::first($collection['resources'], fn($r) => 'environment' === $r['_type']);
-        $tokenVariable = Arr::first($environment['data'], fn($d) => 'token' === $d['name']);
-        $this->assertEquals('username:password1234', $tokenVariable['value']);
+        $tokenVariable = Arr::get($environment['data'], 'token');
+        $this->assertEquals('username:password1234', $tokenVariable);
 
         // Verify requests authentication
         $requests = Arr::where($collection['resources'], fn($r) => 'request' === $r['_type']);

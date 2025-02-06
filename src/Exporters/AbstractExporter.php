@@ -23,7 +23,6 @@ abstract class AbstractExporter implements Exporter
     public function __construct(protected readonly Repository $config, private readonly RouteProcessor $processor) {}
 
     abstract protected function generateStructure(): array;
-
     public function to(string $filename): self
     {
         $this->filename = $filename;

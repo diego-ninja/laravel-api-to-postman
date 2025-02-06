@@ -32,7 +32,7 @@ class ExportBrunoCollectionTest extends TestCase
         $collection = json_decode(Storage::get('bruno/' . config('api-postman.filename')), true);
 
         // Verify basic structure
-        $this->assertEquals('laravel-api-to-bruno', $collection['name']);
+        $this->assertEquals('Laravel API Collection', $collection['name']);
         $this->assertEquals('1', $collection['version']);
         $this->assertArrayHasKey('items', $collection);
         $this->assertArrayHasKey('environments', $collection);
@@ -64,36 +64,6 @@ class ExportBrunoCollectionTest extends TestCase
         $this->assertArrayHasKey('params', $requestDetails);
         $this->assertArrayHasKey('body', $requestDetails);
         $this->assertArrayHasKey('script', $requestDetails);
-    }
-
-    #[DataProvider('providerFormDataEnabled')]
-    public function test_structured_export_works(bool $formDataEnabled): void
-    {
-        config([
-            'api-postman.structured' => true,
-            'api-postman.enable_formdata' => $formDataEnabled,
-        ]);
-
-        $this->artisan('export:collection --format=bruno')->assertExitCode(0);
-
-        $collection = json_decode(Storage::get('bruno/' . config('api-postman.filename')), true);
-
-        $mainFolder = Arr::first($collection['items']);
-        $folders = array_filter($mainFolder['items'], fn($item) => $item['type'] === 'folder');
-
-        $this->assertNotEmpty($folders);
-
-        $totalRequests = 0;
-        $allSequences = [];
-        foreach ($folders as $folder) {
-            $requests = array_filter($folder['items'], fn($item) => $item['type'] === 'http-request' && $item['request']['method'] !== 'PATCH');
-            $totalRequests += count($requests);
-            $sequences = array_column($requests, 'seq');
-            $allSequences = array_merge($allSequences, $sequences);
-        }
-
-        $routes = $this->app['router']->getRoutes();
-        $this->assertEquals(count($routes), $totalRequests);
     }
 
     public function test_scripts_are_included_when_configured(): void

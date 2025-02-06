@@ -3,6 +3,7 @@
 namespace AndreasElia\PostmanGenerator\Exporters;
 
 use AndreasElia\PostmanGenerator\DTO\Request;
+use AndreasElia\PostmanGenerator\Enums\Method;
 use Illuminate\Support\Str;
 
 final class BrunoExporter extends AbstractExporter
@@ -11,7 +12,7 @@ final class BrunoExporter extends AbstractExporter
     protected function generateStructure(): array
     {
         return [
-            'name' => 'laravel-api-to-bruno',
+            'name' => $this->config->get('api-postman.name'),
             'version' => '1',
             'items' => $this->processCollectionItems(),
             'environments' => [
@@ -19,7 +20,7 @@ final class BrunoExporter extends AbstractExporter
             ],
             'brunoConfig' => [
                 'version' => '1',
-                'name' => 'laravel-api-to-bruno',
+                'name' => $this->config->get('api-postman.name'),
                 'type' => 'collection',
                 'ignore' => [
                     'node_modules',
@@ -74,7 +75,7 @@ final class BrunoExporter extends AbstractExporter
     protected function processFlatRequests(): array
     {
         return $this->requests
-            ->filter(fn($request) => $request->method->value !== 'HEAD')
+            ->filter(fn(Request $request) => Method::HEAD !== $request->method)
             ->map(fn($request) => $this->createRequestItem($request))
             ->values()
             ->all();
@@ -82,28 +83,53 @@ final class BrunoExporter extends AbstractExporter
 
     protected function processStructuredRequests(): array
     {
-        $groups = $this->requests
-            ->filter(fn($request) => $request->method->value !== 'HEAD')
-            ->groupBy(function(Request $request) {
-                $segments = explode('/', trim($request->uri, '/'));
-                return $segments[0] ?? '';
-            });
-
-        return $groups->map(function($requests, $group) {
-            return [
-                'type' => 'folder',
-                'name' => Str::title($group),
-                'items' => $requests->map(fn($request) => $this->createRequestItem($request))->values()->all()
-            ];
-        })->values()->all();
+        return $this->processNestedGroups($this->requests->groupByNestedPath());
     }
 
-    protected function createRequestItem(Request $request): array
+    protected function processNestedGroups(array $groups, string $parentPath = ''): array
     {
+        $result = [];
+
+        foreach ($groups as $segment => $data) {
+            $currentPath = $parentPath ? $parentPath . '/' . $segment : $segment;
+
+            $folder = [
+                'type' => 'folder',
+                'name' => $segment,
+                'items' => []
+            ];
+
+            if (!empty($data['requests'])) {
+                foreach ($data['requests'] as $request) {
+                    $folder['items'][] = $this->createRequestItem($request, $currentPath);
+                }
+            }
+
+            if (!empty($data['children'])) {
+                $folder['items'] = array_merge(
+                    $folder['items'],
+                    $this->processNestedGroups($data['children'], $currentPath)
+                );
+            }
+
+            $result[] = $folder;
+        }
+
+        return $result;
+    }
+
+    protected function createRequestItem(Request $request, ?string $currentPath = null): array
+    {
+        $name = $request->getName($this->config->get('api-postman.crud_folders'));
+
+        if ($currentPath && $this->config->get('api-postman.structured')) {
+            $name = sprintf('[%s] %s', strtoupper($request->method->value), $name);
+        }
+
         return [
             'uid' => $this->generateUid(),
             'type' => 'http-request',
-            'name' => $this->getRequestName($request),
+            'name' => $name,
             'seq' => $this->sequence++,
             'request' => [
                 'url' => $this->formatUrl($request),
