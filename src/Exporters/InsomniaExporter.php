@@ -125,7 +125,7 @@ final class InsomniaExporter extends AbstractExporter
             '_id' => 'req_' . Str::uuid()->toString(),
             '_type' => 'request',
             'parentId' => $parentId,
-            'name' => $request->getName(
+            'name' => $request->name(
                 $this->config->get('api-postman.structured') &&
                 $this->config->get('api-postman.crud_folders')
             ),

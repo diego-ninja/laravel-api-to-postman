@@ -2,6 +2,7 @@
 
 namespace AndreasElia\PostmanGenerator\Exporters;
 
+use AndreasElia\PostmanGenerator\Collections\RequestCollection;
 use AndreasElia\PostmanGenerator\DTO\Request;
 use AndreasElia\PostmanGenerator\Enums\Method;
 use Illuminate\Support\Str;
@@ -83,7 +84,41 @@ final class BrunoExporter extends AbstractExporter
 
     protected function processStructuredRequests(): array
     {
-        return $this->processNestedGroups($this->requests->groupByNestedPath());
+        return $this->processGroups($this->requests->groupByGroup());
+    }
+
+    protected function processGroups(RequestCollection $groups): array
+    {
+        return $groups->map(function(RequestCollection $requests, string $groupName) {
+            return [
+                'type' => 'folder',
+                'name' => Str::title($groupName),
+                'items' => $this->config->get('api-postman.structured')
+                    ? $this->processGroupRequests($requests)
+                    : $requests->map(fn($request) => $this->createRequestItem($request))->values()->all()
+            ];
+        })->values()->all();
+    }
+
+    protected function processGroupRequests(RequestCollection $requests): array
+    {
+        $subgroups = $requests->groupBy(function(Request $request) {
+            $segments = array_values(array_filter(explode('/', trim($request->uri, '/'))));
+            array_shift($segments);
+            return implode('/', $segments);
+        });
+
+        return $subgroups->map(function(RequestCollection $requests, string $path) {
+            if (empty($path)) {
+                return $requests->map(fn($request) => $this->createRequestItem($request))->values()->all();
+            }
+
+            return [
+                'type' => 'folder',
+                'name' => Str::title(str_replace('/', ' / ', $path)),
+                'items' => $requests->map(fn($request) => $this->createRequestItem($request))->values()->all()
+            ];
+        })->flatten(1)->values()->all();
     }
 
     protected function processNestedGroups(array $groups, string $parentPath = ''): array
@@ -120,7 +155,7 @@ final class BrunoExporter extends AbstractExporter
 
     protected function createRequestItem(Request $request, ?string $currentPath = null): array
     {
-        $name = $request->getName($this->config->get('api-postman.crud_folders'));
+        $name = $request->name($this->config->get('api-postman.crud_folders'));
 
         if ($currentPath && $this->config->get('api-postman.structured')) {
             $name = sprintf('[%s] %s', strtoupper($request->method->value), $name);
@@ -253,14 +288,6 @@ final class BrunoExporter extends AbstractExporter
         return $body;
     }
 
-    protected function getRequestName(Request $request): string
-    {
-        if ($this->config->get('api-postman.structured') && $this->config->get('api-postman.crud_folders')) {
-            return $request->method->action() ?? $request->method->value;
-        }
-
-        return $request->name;
-    }
 
     protected function generateUid(): string
     {

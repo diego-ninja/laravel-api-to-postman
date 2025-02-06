@@ -19,6 +19,7 @@ final readonly class Request implements JsonSerializable
         public Url $url,
         public ?array $authentication,
         public ?array $body,
+        public ?string $group = null,
     ) {}
 
     public static function from(string|array $data): Request
@@ -37,16 +38,26 @@ final readonly class Request implements JsonSerializable
             url: Url::from($data['url']),
             authentication: $data['authentication'] ?? null,
             body: $data['body'] ?? null,
+            group: $data['group'] ?? null,
         );
     }
 
-    public function getName(?bool $useCrudFolders): string
+    public function name(?bool $useCrudFolders): string
     {
         if ($useCrudFolders) {
             return $this->method->action() ?? $this->name;
         }
 
         return $this->name;
+    }
+
+    public function group(): string
+    {
+        if ($this->method === Method::HEAD) {
+            return '';
+        }
+
+        return $this->group !== null ? $this->group : explode('/', mb_trim($this->uri, '/'))[0] ?? 'Default';
     }
 
     public function array(): array
@@ -61,6 +72,7 @@ final readonly class Request implements JsonSerializable
             'url' => $this->url->array(),
             'authentication' => $this->authentication,
             'body' => $this->body,
+            'group' => $this->group,
         ];
     }
 

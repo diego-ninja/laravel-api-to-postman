@@ -4,6 +4,7 @@ namespace AndreasElia\PostmanGenerator\Tests\Feature;
 
 use AndreasElia\PostmanGenerator\Tests\Fixtures\PostmanCollectionHelpersTrait;
 use AndreasElia\PostmanGenerator\Tests\TestCase;
+use Illuminate\Routing\Route;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -51,10 +52,10 @@ class ExportPostmanCollectionTest extends TestCase
         $this->assertEquals(count($routes), $totalCollectionItems);
 
         foreach ($routes as $route) {
+            /** @var Route $route */
             $methods = $route->methods();
 
-            $collectionRoutes = Arr::where($collectionItems, fn($item) => $item['name'] === $route->getName());
-
+            $collectionRoutes = Arr::where($collectionItems, fn(array $item) => $item['name'] === $route->getName());
             $collectionRoute = Arr::first($collectionRoutes);
 
             if ( ! in_array($collectionRoute['request']['method'], $methods)) {

@@ -1,7 +1,7 @@
 <?php
 
 namespace AndreasElia\PostmanGenerator\Processors;
-
+use AndreasElia\PostmanGenerator\Attributes\Request as RequestAttribute;
 use AndreasElia\PostmanGenerator\Collections\HeaderCollection;
 use AndreasElia\PostmanGenerator\Collections\ParameterCollection;
 use AndreasElia\PostmanGenerator\Collections\RequestCollection;
@@ -16,7 +16,6 @@ use Closure;
 use Illuminate\Config\Repository;
 use Illuminate\Routing\Route;
 use Illuminate\Routing\Router;
-use Illuminate\Validation\Rule;
 use ReflectionClass;
 use ReflectionException;
 use ReflectionFunction;
@@ -28,6 +27,7 @@ final class RouteProcessor
     public function __construct(
         private readonly Router $router,
         private readonly Repository $config,
+        private readonly AttributeProcessor $attributeProcessor,
     ) {
         $this->resolveAuth();
     }
@@ -54,10 +54,15 @@ final class RouteProcessor
     {
         $methods = array_filter(
             array_map(fn($value) => Method::tryFrom(mb_strtoupper($value)), $route->methods()),
-            fn($method) => Method::HEAD !== $method,
+            fn(Method $method) => Method::HEAD !== $method,
         );
 
         $middlewares = $route->gatherMiddleware();
+
+        // Get attributes if available
+        $reflectionMethod = $this->getReflectionMethod($route->getAction());
+        $requestAttributes = $reflectionMethod ? $this->attributeProcessor->getRequestAttribute($reflectionMethod) : null;
+        $collectionAttributes = $reflectionMethod ? $this->attributeProcessor->getCollectionAttribute($reflectionMethod->getDeclaringClass()->getName()) : null;
 
         foreach ($methods as $method) {
             if ( ! $this->shouldProcessRoute($middlewares)) {
@@ -65,11 +70,11 @@ final class RouteProcessor
             }
 
             $request = new Request(
-                name: $route->getName() ?: $route->uri(),
+                name: $requestAttributes?->name ?? $route->getName() ?: $route->uri(),
                 method: $method,
                 uri: $route->uri(),
-                description: $this->getDescription($route),
-                headers: $this->getHeaders(),
+                description: $requestAttributes?->description ?? $this->getDescription($route),
+                headers: $this->getHeaders($requestAttributes),
                 parameters: $this->getParameters($route),
                 url: Url::fromRoute(
                     route: $route,
@@ -78,6 +83,7 @@ final class RouteProcessor
                 ),
                 authentication: $this->getAuthenticationInfo($middlewares),
                 body: Method::GET === $method ? null : $this->getBody($route),
+                group: $requestAttributes?->group ?? $collectionAttributes?->group ?? null,
             );
 
             $collection->add($request);
@@ -140,7 +146,7 @@ final class RouteProcessor
     /**
      * @throws ReflectionException
      */
-    protected function getParameters(Route $route): ParameterCollection
+    protected function getParameters(Route $route, ?RequestAttribute $request = null): ParameterCollection
     {
         $parameters = new ParameterCollection();
         preg_match_all('/\{([^}]+)}/', $route->uri(), $matches);
@@ -161,88 +167,13 @@ final class RouteProcessor
                 $formParameters->map(fn(array $param) => new Parameter(
                     name: $param['name'],
                     value: $this->config->get('api-postman.formdata')[$param['name']] ?? '',
-                    description: $this->formatRuleDescription($param['name'], $param['description']),
+                    description: app(RuleFormatter::class)->format($param['name'], $param['description']),
                     type: ParameterType::QUERY,
                 )),
             );
         }
 
         return $parameters;
-    }
-
-    protected function formatRuleDescription(string $fieldName, string|array|Rule $rules): string
-    {
-        if ( ! $this->config->get('api-postman.print_rules')) {
-            return '';
-        }
-
-        if (is_string($rules)) {
-            return $rules;
-        }
-
-        if (is_array($rules)) {
-            return $this->config['rules_to_human_readable']
-                ? $this->parseRulesIntoHumanReadable($fieldName, $rules)
-                : implode(', ', $rules);
-        }
-
-        if (is_object($rules)) {
-            return $this->safelyStringifyClassBasedRule($rules);
-        }
-
-        return '';
-    }
-
-    protected function parseRulesIntoHumanReadable($attribute, $rules): string
-    {
-        if (is_object($rules)) {
-            return $this->safelyStringifyClassBasedRule($rules);
-        }
-
-        if (is_array($rules)) {
-            $messages = [];
-            foreach ($rules as $rule) {
-                if (is_string($rule)) {
-                    $messages[] = "The {$attribute} field " . $this->humanizeRule($rule);
-                } elseif (is_object($rule)) {
-                    $messages[] = $this->safelyStringifyClassBasedRule($rule);
-                }
-            }
-            return implode(', ', array_filter($messages));
-        }
-
-        return '';
-    }
-
-    protected function humanizeRule(string $rule): string
-    {
-        $parts = explode(':', $rule);
-        $ruleName = $parts[0];
-
-        return match ($ruleName) {
-            'required' => 'is required',
-            'integer' => 'must be an integer',
-            'string' => 'must be a string',
-            'max' => "must not be greater than {$parts[1]}",
-            'min' => "must be at least {$parts[1]}",
-            'sometimes' => '(Optional)',
-            'nullable' => '(Nullable)',
-            default => "must satisfy rule: {$rule}",
-        };
-    }
-
-    protected function safelyStringifyClassBasedRule($rule): string
-    {
-        if ( ! is_object($rule) || ! method_exists($rule, '__toString')) {
-            return '';
-        }
-
-        return (string) $rule;
-    }
-
-    protected function getHeaders(): HeaderCollection
-    {
-        return HeaderCollection::from($this->config->get('api-postman.headers'));
     }
 
     protected function getAuthenticationInfo(array $middlewares): ?array
@@ -307,5 +238,27 @@ final class RouteProcessor
         }
 
         return false;
+    }
+
+    protected function getHeaders(?RequestAttribute $request = null): HeaderCollection
+    {
+        $configHeaders = $this->config->get('api-postman.headers', []);
+
+        if (empty($request?->headers)) {
+            return HeaderCollection::from($configHeaders);
+        }
+
+        $mergedHeaders = collect($configHeaders)
+            ->merge($request->headers)
+            ->map(function($header, $key) {
+                if (is_string($key)) {
+                    return ['key' => $key, 'value' => $header];
+                }
+                return $header;
+            })
+            ->values()
+            ->all();
+
+        return HeaderCollection::from($mergedHeaders);
     }
 }

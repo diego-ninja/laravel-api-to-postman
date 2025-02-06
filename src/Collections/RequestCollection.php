@@ -13,9 +13,9 @@ final class RequestCollection extends Collection
         return new self(array_map(fn(array $request) => Request::from($request), $requests));
     }
 
-    public function groupByPath(): Collection
+    public function groupByGroup(): RequestCollection
     {
-        return $this->groupBy(fn(Request $request) => explode('/', mb_trim($request->uri, '/'))[0] ?? '');
+        return $this->groupBy(fn(Request $request) => $request->group());
     }
 
     public function groupByNestedPath(): array

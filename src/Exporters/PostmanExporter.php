@@ -123,7 +123,7 @@ final class PostmanExporter extends AbstractExporter
     protected function createRequestItem(Request $request): array
     {
         return [
-            'name' => $request->getName(
+            'name' => $request->name(
                 $this->config->get('api-postman.structured') &&
                 $this->config->get('api-postman.crud_folders')
             ),
