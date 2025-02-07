@@ -6,6 +6,7 @@ use AndreasElia\PostmanGenerator\Attributes\Collection;
 use AndreasElia\PostmanGenerator\Attributes\Request;
 use ReflectionClass;
 use ReflectionException;
+use ReflectionFunction;
 use ReflectionMethod;
 
 final readonly class AttributeProcessor
@@ -26,9 +27,18 @@ final readonly class AttributeProcessor
         return $attributes[0]->newInstance();
     }
 
-    public function getRequestAttribute(ReflectionMethod $method): ?Request
+    /**
+     * Get the Request attribute from a reflection method.
+     * Note that closures (anonymous functions) cannot have attributes in PHP,
+     * so this will always return null for ReflectionFunction.
+     */
+    public function getRequestAttribute(ReflectionMethod|ReflectionFunction $reflector): ?Request
     {
-        $attributes = $method->getAttributes(Request::class);
+        if ($reflector instanceof ReflectionFunction) {
+            return null;
+        }
+
+        $attributes = $reflector->getAttributes(Request::class);
 
         if (empty($attributes)) {
             return null;

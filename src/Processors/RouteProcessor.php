@@ -19,6 +19,7 @@ use Illuminate\Support\Str;
 use ReflectionClass;
 use ReflectionException;
 use ReflectionFunction;
+use ReflectionMethod;
 
 final class RouteProcessor
 {
@@ -122,12 +123,12 @@ final class RouteProcessor
      */
     protected function getDescription(Route $route): string
     {
-        if ( ! $this->config->get('api-postman.include_doc_comments')) {
+        if (!$this->config->get('api-postman.include_doc_comments')) {
             return '';
         }
 
         $reflectionMethod = $this->getReflectionMethod($route->getAction());
-        if ( ! $reflectionMethod) {
+        if (!$reflectionMethod) {
             return '';
         }
 
@@ -178,7 +179,7 @@ final class RouteProcessor
     /**
      * @throws ReflectionException
      */
-    private function getReflectionMethod(array $action): ?object
+    protected function getReflectionMethod(array $action): ReflectionMethod|ReflectionFunction|null
     {
         if ($this->containsSerializedClosure($action)) {
             $action['uses'] = unserialize($action['uses'])->getClosure();
@@ -188,7 +189,7 @@ final class RouteProcessor
             return new ReflectionFunction($action['uses']);
         }
 
-        if ( ! is_string($action['uses'])) {
+        if (!is_string($action['uses'])) {
             return null;
         }
 
@@ -198,7 +199,7 @@ final class RouteProcessor
         }
 
         $reflection = new ReflectionClass($routeData[0]);
-        if ( ! $reflection->hasMethod($routeData[1])) {
+        if (!$reflection->hasMethod($routeData[1])) {
             return null;
         }
 
