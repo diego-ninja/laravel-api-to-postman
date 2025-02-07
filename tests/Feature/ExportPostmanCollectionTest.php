@@ -2,6 +2,7 @@
 
 namespace AndreasElia\PostmanGenerator\Tests\Feature;
 
+use AndreasElia\PostmanGenerator\Enums\Method;
 use AndreasElia\PostmanGenerator\Tests\Fixtures\PostmanCollectionHelpersTrait;
 use AndreasElia\PostmanGenerator\Tests\TestCase;
 use Illuminate\Routing\Route;
@@ -376,5 +377,46 @@ class ExportPostmanCollectionTest extends TestCase
 
         $this->assertEquals('example.users.someLogs.update', $targetRequest['name']);
         $this->assertEquals('{{base_url}}/example/users/:user/someLogs/:someLog', $targetRequest['request']['url']['raw']);
+    }
+
+    public function test_request_attributes_are_applied(): void
+    {
+        $this->artisan('export:collection')->assertExitCode(0);
+
+        $collection = collect(json_decode(Storage::get('postman/' . config('api-postman.filename')), true)['item']);
+
+        $indexRequest = $collection->where('name', 'List Audit Logs')->first();
+        $this->assertEquals('List all audit logs', $indexRequest['request']['description']);
+
+        $showWithReflectionRequest = $collection->where('name', 'example.show-with-reflection-method')->first();
+        $this->assertEquals('example.show-with-reflection-method', $showWithReflectionRequest['name']);
+        $this->assertEquals(Method::GET->value, $showWithReflectionRequest['request']['method']);
+
+    }
+
+    public function test_request_groups_are_applied_in_structured_mode(): void
+    {
+        config([
+            'api-postman.structured' => true,
+            'api-postman.crud_folders' => false,
+        ]);
+
+        $this->artisan('export:collection')->assertExitCode(0);
+
+        $collection = json_decode(Storage::get('postman/' . config('api-postman.filename')), true);
+
+        $logsFolder = Arr::first($collection['item'], function ($item) {
+            return isset($item['name']) && $item['name'] === 'Logs';
+        });
+
+        $this->assertNotNull($logsFolder);
+        $this->assertArrayHasKey('item', $logsFolder);
+
+        $indexRequest = collect($logsFolder['item'])->first(function ($item) {
+            return $item['name'] === 'List Audit Logs';
+        });
+
+        $this->assertNotNull($indexRequest);
+        $this->assertEquals('List all audit logs', $indexRequest['request']['description']);
     }
 }

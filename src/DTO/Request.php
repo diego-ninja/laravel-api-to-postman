@@ -6,10 +6,13 @@ use AndreasElia\PostmanGenerator\Collections\HeaderCollection;
 use AndreasElia\PostmanGenerator\Collections\ParameterCollection;
 use AndreasElia\PostmanGenerator\Enums\Method;
 use JsonSerializable;
+use Ramsey\Uuid\Uuid;
+use Ramsey\Uuid\UuidInterface;
 
 final readonly class Request implements JsonSerializable
 {
     public function __construct(
+        public UuidInterface $id,
         public string $name,
         public Method $method,
         public string $uri,
@@ -19,6 +22,7 @@ final readonly class Request implements JsonSerializable
         public Url $url,
         public ?array $authentication,
         public ?array $body,
+        public ?array $responses = null,
         public ?string $group = null,
     ) {}
 
@@ -29,6 +33,7 @@ final readonly class Request implements JsonSerializable
         }
 
         return new self(
+            id: Uuid::fromString($data['id']),
             name: $data['name'],
             method: Method::from($data['method']),
             uri: $data['uri'],
@@ -38,6 +43,7 @@ final readonly class Request implements JsonSerializable
             url: Url::from($data['url']),
             authentication: $data['authentication'] ?? null,
             body: $data['body'] ?? null,
+            responses: $data['responses'] ?? null,
             group: $data['group'] ?? null,
         );
     }
@@ -45,7 +51,7 @@ final readonly class Request implements JsonSerializable
     public function name(?bool $useCrudFolders): string
     {
         if ($useCrudFolders) {
-            return $this->method->action() ?? $this->name;
+            return sprintf('[%s] %s', $this->method->action(), $this->name);
         }
 
         return $this->name;
@@ -60,9 +66,20 @@ final readonly class Request implements JsonSerializable
         return $this->group !== null ? $this->group : explode('/', mb_trim($this->uri, '/'))[0] ?? 'Default';
     }
 
+    public function getNestedPath(): array
+    {
+        if ($this->group !== null) {
+            return [$this->group];
+        }
+
+        $segments = array_filter(explode('/', mb_trim($this->uri, '/')));
+        return array_filter($segments, fn($segment) => !str_starts_with($segment, '{'));
+    }
+
     public function array(): array
     {
-        return [
+        $data = [
+            'id' => $this->id->toString(),
             'name' => $this->name,
             'method' => $this->method->value,
             'uri' => $this->uri,
@@ -72,8 +89,11 @@ final readonly class Request implements JsonSerializable
             'url' => $this->url->array(),
             'authentication' => $this->authentication,
             'body' => $this->body,
+            'responses' => $this->responses,
             'group' => $this->group,
         ];
+
+        return array_filter($data, fn($value) => $value !== null);
     }
 
     public function json(): string

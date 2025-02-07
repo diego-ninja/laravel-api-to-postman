@@ -5,7 +5,6 @@ namespace AndreasElia\PostmanGenerator\Commands;
 use AndreasElia\PostmanGenerator\Authentication\Basic;
 use AndreasElia\PostmanGenerator\Authentication\Bearer;
 use AndreasElia\PostmanGenerator\Enums\Format;
-use AndreasElia\PostmanGenerator\Exporters\BrunoExporter;
 use AndreasElia\PostmanGenerator\Exporters\InsomniaExporter;
 use AndreasElia\PostmanGenerator\Exporters\PostmanExporter;
 use Illuminate\Console\Command;

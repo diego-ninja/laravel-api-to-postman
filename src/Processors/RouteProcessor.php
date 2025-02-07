@@ -6,7 +6,6 @@ use AndreasElia\PostmanGenerator\Collections\HeaderCollection;
 use AndreasElia\PostmanGenerator\Collections\ParameterCollection;
 use AndreasElia\PostmanGenerator\Collections\RequestCollection;
 use AndreasElia\PostmanGenerator\Concerns\HasAuthentication;
-use AndreasElia\PostmanGenerator\DTO\Parameter;
 use AndreasElia\PostmanGenerator\DTO\Request;
 use AndreasElia\PostmanGenerator\DTO\Url;
 use AndreasElia\PostmanGenerator\Enums\Method;
@@ -16,6 +15,7 @@ use Closure;
 use Illuminate\Config\Repository;
 use Illuminate\Routing\Route;
 use Illuminate\Routing\Router;
+use Illuminate\Support\Str;
 use ReflectionClass;
 use ReflectionException;
 use ReflectionFunction;
@@ -70,6 +70,7 @@ final class RouteProcessor
             }
 
             $request = new Request(
+                id: Str::uuid(),
                 name: $requestAttributes?->name ?? $route->getName() ?: $route->uri(),
                 method: $method,
                 uri: $route->uri(),
@@ -149,31 +150,16 @@ final class RouteProcessor
     protected function getParameters(Route $route, ?RequestAttribute $request = null): ParameterCollection
     {
         $parameters = new ParameterCollection();
-        preg_match_all('/\{([^}]+)}/', $route->uri(), $matches);
-
-        foreach ($matches[1] as $param) {
-            $parameters->add(new Parameter(
-                name: $param,
-                value: '',
-                description: '',
-                type: ParameterType::PATH,
-            ));
-        }
-
-        $reflectionMethod = $this->getReflectionMethod($route->getAction());
-        if ($reflectionMethod && $this->config->get('api-postman.enable_formdata') && 'GET' === $route->methods()[0]) {
-            $formParameters = (new FormDataProcessor())->process($reflectionMethod);
-            $parameters = $parameters->merge(
-                $formParameters->map(fn(array $param) => new Parameter(
-                    name: $param['name'],
-                    value: $this->config->get('api-postman.formdata')[$param['name']] ?? '',
-                    description: app(RuleFormatter::class)->format($param['name'], $param['description']),
-                    type: ParameterType::QUERY,
-                )),
+        return $parameters
+            ->fromRoute($route)
+            ->fromAttribute($request)
+            ->when(
+                $this->config->get('api-postman.enable_formdata') && Method::GET->value === $route->methods()[0],
+                fn(ParameterCollection $collection) => $collection->fromFormRequest(
+                    $this->getReflectionMethod($route->getAction()),
+                    $this->config->get('api-postman.formdata', [])
+                )
             );
-        }
-
-        return $parameters;
     }
 
     protected function getAuthenticationInfo(array $middlewares): ?array

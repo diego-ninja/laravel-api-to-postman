@@ -2,13 +2,16 @@
 
 namespace AndreasElia\PostmanGenerator\Exporters;
 
+use AndreasElia\PostmanGenerator\DTO\Parameter;
 use AndreasElia\PostmanGenerator\DTO\Request;
 use AndreasElia\PostmanGenerator\Enums\Method;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 
 final class InsomniaExporter extends AbstractExporter
 {
     private string $workspaceId;
+    private array $resourceIds = [];
     protected function generateStructure(): array
     {
         $this->workspaceId = 'wrk_' . Str::uuid()->toString();
@@ -24,11 +27,11 @@ final class InsomniaExporter extends AbstractExporter
 
     protected function generateResources(): array
     {
-        $workspace = $this->createWorkspace();
-        $environment = $this->createEnvironment();
-        $requests = $this->processRequests();
-
-        return array_merge([$workspace, $environment], $requests);
+        return array_merge(
+            [$this->createWorkspace()],
+            $this->createEnvironments(),
+            $this->processRequests()
+        );
     }
 
     protected function createWorkspace(): array
@@ -40,26 +43,59 @@ final class InsomniaExporter extends AbstractExporter
             'name' => $this->config->get('api-postman.name'),
             'description' => $this->config->get('app.description'),
             'scope' => 'collection',
+            'created' => now()->getTimestamp(),
+            'modified' => now()->getTimestamp(),
         ];
     }
 
-    protected function createEnvironment(): array
+    protected function createEnvironments(): array
     {
-        $data = [
+        $environments = [];
+
+        // Base Environment
+        $baseEnv = [
             '_id' => 'env_' . Str::uuid()->toString(),
             '_type' => 'environment',
             'parentId' => $this->workspaceId,
             'name' => 'Base Environment',
             'data' => [
-                'base_url' => $this->config->get('api-postman.base_url')
-            ]
+                'base_url' => $this->config->get('api-postman.base_url'),
+            ],
+            'dataPropertyOrder' => [
+                'type' => 'alphabetical',
+            ],
+            'color' => null,
+            'isPrivate' => false,
+            'metaSortKey' => 1000000000,
+            'modified' => now()->getTimestamp(),
         ];
 
+        // Add authentication if present
         if ($this->authentication) {
-            $data['data']['token'] = $this->authentication->getToken();
+            $baseEnv['data']['token'] = $this->authentication->getToken();
         }
 
-        return $data;
+        $environments[] = $baseEnv;
+
+        // Development Environment
+        $environments[] = [
+            '_id' => 'env_' . Str::uuid()->toString(),
+            '_type' => 'environment',
+            'parentId' => $this->workspaceId,
+            'name' => 'Development',
+            'data' => [
+                'base_url' => $this->config->get('api-postman.base_url'),
+            ],
+            'dataPropertyOrder' => [
+                'type' => 'alphabetical',
+            ],
+            'color' => '#00ff00',
+            'isPrivate' => false,
+            'metaSortKey' => 2000000000,
+            'modified' => now()->getTimestamp(),
+        ];
+
+        return $environments;
     }
 
     protected function processRequests(): array
@@ -93,9 +129,11 @@ final class InsomniaExporter extends AbstractExporter
     protected function processNestedGroups(array $groups, array &$resources, ?string $parentId = null): void
     {
         $parentId = $parentId ?? $this->workspaceId;
+        $sortKey = 0;
 
         foreach ($groups as $segment => $data) {
-            $folderId = 'fld_' . Str::uuid()->toString();
+            $folderId = $this->validateResourceId('fld_' . Str::uuid()->toString(), 'fld');
+            $this->resourceIds[] = $folderId;
 
             // Create folder
             $resources[] = [
@@ -103,51 +141,64 @@ final class InsomniaExporter extends AbstractExporter
                 '_type' => 'request_group',
                 'parentId' => $parentId,
                 'name' => Str::title($segment),
-                'description' => '',
-                'scope' => 'collection',
+                'description' => sprintf('Endpoints for %s', $segment),
+                'environment' => [],
+                'environmentPropertyOrder' => null,
+                'metaSortKey' => $sortKey,
+                'modified' => now()->getTimestamp(),
+                'created' => now()->getTimestamp(),
             ];
 
             // Add requests to current folder
             foreach ($data['requests'] as $request) {
-                $resources[] = $this->createRequestResource($request, $folderId);
+                $resources[] = $this->createRequestResource($request, $folderId, $sortKey);
+                $sortKey += 100;
             }
 
             // Process nested folders
             if (!empty($data['children'])) {
                 $this->processNestedGroups($data['children'], $resources, $folderId);
             }
+
+            $sortKey += 1000;
         }
     }
 
-    protected function createRequestResource(Request $request, ?string $parentId = null): array
+    protected function createRequestResource(Request $request, string $parentId, int $sortKey = 0): array
     {
+        $requestId = 'req_' . $request->id->toString();
+        $this->resourceIds[] = $requestId;
+
         $requestResource = [
-            '_id' => 'req_' . Str::uuid()->toString(),
+            '_id' => $requestId,
             '_type' => 'request',
             'parentId' => $parentId,
-            'name' => $request->name(
-                $this->config->get('api-postman.structured') &&
-                $this->config->get('api-postman.crud_folders')
-            ),
+            'modified' => now()->getTimestamp(),
+            'created' => now()->getTimestamp(),
+            'url' => $this->formatUrl($request),
+            'name' => $request->name($this->config->get('api-postman.crud_folders')),
             'description' => $request->description,
             'method' => $request->method->value,
-            'url' => $this->formatUrl($request),
-            'parameters' => $this->formatParameters($request),
             'headers' => $this->formatHeaders($request),
             'authentication' => $this->formatAuthentication(),
-            'body' => $this->formatBody($request),
+            'metaSortKey' => $sortKey,
+            'isPrivate' => false,
             'settingStoreCookies' => true,
             'settingSendCookies' => true,
             'settingDisableRenderRequestBody' => false,
             'settingEncodeUrl' => true,
-            'settingFollowRedirects' => 'global',
             'settingRebuildPath' => true,
+            'settingFollowRedirects' => 'global',
         ];
 
-        if ($this->config->get('api-postman.protocol_profile_behavior.disable_body_pruning')) {
-            $requestResource['protocolProfileBehavior'] = [
-                'disableBodyPruning' => true,
-            ];
+        // Add body if present
+        if ($request->body) {
+            $requestResource['body'] = $this->formatBody($request);
+        }
+
+        // Add parameters if present
+        if (!$request->parameters->isEmpty()) {
+            $requestResource['parameters'] = $this->formatParameters($request);
         }
 
         return $requestResource;
@@ -155,22 +206,22 @@ final class InsomniaExporter extends AbstractExporter
 
     protected function formatUrl(Request $request): string
     {
-        $baseUrl = '{{ base_url }}';
-        $path = mb_trim($request->uri, '/');
-
-        $path = preg_replace('/\{([^}]+)}/', ':$1', $path);
-
-        return "{$baseUrl}/{$path}";
+        return sprintf(
+            '{{ base_url }}/%s',
+            $this->cleanUrl($request->uri)
+        );
     }
 
     protected function formatParameters(Request $request): array
     {
         return $request->parameters
-            ->map(fn($parameter) => [
+            ->map(fn(Parameter $parameter) => [
                 'name' => $parameter->name,
                 'value' => $parameter->value,
                 'description' => $parameter->description,
                 'disabled' => $parameter->disabled,
+                'type' => $parameter->type->value,
+                'multiline' => false,
             ])
             ->values()
             ->all();
@@ -197,13 +248,17 @@ final class InsomniaExporter extends AbstractExporter
             'type' => $this->authentication->getType(),
             'token' => '{{ token }}',
             'prefix' => $this->authentication->prefix(),
+            'disabled' => false,
         ];
     }
 
-    protected function formatBody(Request $request): ?array
+    protected function formatBody(Request $request): array
     {
-        if ( ! $request->body) {
-            return null;
+        if (!isset($request->body['mode']) || $request->body['mode'] !== 'urlencoded') {
+            return [
+                'mimeType' => 'application/json',
+                'text' => json_encode($request->body, JSON_PRETTY_PRINT),
+            ];
         }
 
         return [
@@ -214,9 +269,49 @@ final class InsomniaExporter extends AbstractExporter
                     'value' => $param['value'],
                     'description' => $param['description'] ?? '',
                     'disabled' => false,
+                    'type' => 'text',
+                    'multiline' => false,
                 ])
                 ->values()
                 ->all(),
         ];
+    }
+
+    private function validateResourceId(string $id, string $prefix): string
+    {
+        if (!str_starts_with($id, $prefix . '_')) {
+            throw new InvalidArgumentException(
+                sprintf('Invalid resource ID format. Expected prefix %s', $prefix)
+            );
+        }
+
+        if (in_array($id, $this->resourceIds)) {
+            throw new InvalidArgumentException(
+                sprintf('Duplicate resource ID: %s', $id)
+            );
+        }
+
+        return $id;
+    }
+
+    private function validateHexColor(?string $color): ?string
+    {
+        if ($color === null) {
+            return null;
+        }
+
+        if (!preg_match('/^#[a-f0-9]{6}$/i', $color)) {
+            throw new InvalidArgumentException('Invalid hex color code');
+        }
+
+        return $color;
+    }
+
+    private function cleanUrl(string $url): string
+    {
+        $url = preg_replace('#/+#', '/', $url);
+        $url = rtrim($url, '/');
+
+        return preg_replace('/\{([^}]+)}/', ':$1', $url);
     }
 }

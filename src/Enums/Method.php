@@ -25,7 +25,7 @@ enum Method: string
         return match ($this) {
             self::GET => 'index',
             self::POST => 'store',
-            self::PUT,
+            self::PUT => 'replace',
             self::PATCH => 'update',
             self::DELETE => 'destroy',
             self::COPY,

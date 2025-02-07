@@ -3,72 +3,103 @@
 namespace AndreasElia\PostmanGenerator\Exporters;
 
 use AndreasElia\PostmanGenerator\DTO\Request;
+use Ramsey\Uuid\Uuid;
 
 final class PostmanExporter extends AbstractExporter
 {
     protected function generateStructure(): array
     {
         $structure = [
-            'variable' => [
-                [
-                    'key' => 'base_url',
-                    'value' => $this->config->get('api-postman.base_url'),
-                ],
-            ],
-            'info' => [
-                'name' => $this->config->get('api-postman.name'),
-                'description' => $this->config->get('app.description'),
-                'schema' => 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
-            ],
+            'variable' => $this->generateVariables(),
+            'info' => $this->generateInfo(),
             'item' => $this->processRequests(),
-            'event' => [],
+            'event' => $this->generateEvents(),
+            'auth' => $this->generateAuth(),
         ];
 
-        $this->processAuthentication($structure);
-        $this->processEvents($structure);
-
-        return $structure;
+        return array_filter($structure, fn($value) => !is_null($value));
     }
 
-    protected function processAuthentication(array &$structure): void
+    protected function generateInfo(): array
     {
+        return [
+            '_postman_id' => Uuid::uuid4()->toString(),
+            'name' => $this->config->get('api-postman.name'),
+            'description' => $this->config->get('app.description'),
+            'schema' => 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
+            'version' => [
+                'major' => 1,
+                'minor' => 0,
+                'patch' => 0,
+            ],
+        ];
+    }
+
+    protected function generateVariables(): array
+    {
+        $variables = [
+            [
+                'key' => 'base_url',
+                'value' => $this->config->get('api-postman.base_url'),
+                'type' => 'string',
+                'enabled' => true,
+            ],
+        ];
+
         if ($this->authentication) {
-            $structure['variable'][] = [
+            $variables[] = [
                 'key' => 'token',
                 'value' => $this->authentication->getToken(),
-            ];
-
-            $structure['auth'] = [
-                'type' => $this->authentication->getType(),
-                $this->authentication->getType() => [
-                    'token' => '{{token}}',
-                ],
+                'type' => 'string',
+                'enabled' => true,
             ];
         }
+
+        return $variables;
     }
 
-    protected function processEvents(array &$structure): void
+    protected function generateAuth(): ?array
     {
-        $preRequestScript = $this->getScript('pre-request');
-        $testScript = $this->getScript('test');
+        if (!$this->authentication) {
+            return null;
+        }
 
-        if ($preRequestScript || $testScript) {
-            $scripts = [
-                'prerequest' => $preRequestScript,
-                'test' => $testScript,
-            ];
+        return [
+            'type' => $this->authentication->getType(),
+            $this->authentication->getType() => [
+                [
+                    'key' => 'token',
+                    'value' => '{{token}}',
+                    'type' => 'string',
+                ],
+            ],
+        ];
+    }
 
-            foreach ($scripts as $type => $script) {
-                $structure['event'][] = [
+    protected function generateEvents(): array
+    {
+        $events = [];
+
+        $scripts = [
+            'prerequest' => $this->getScript('pre-request'),
+            'test' => $this->getScript('test'),
+        ];
+
+        foreach ($scripts as $type => $script) {
+            if ($script) {
+                $events[] = [
                     'listen' => $type,
                     'script' => [
                         'type' => 'text/javascript',
-                        'exec' => $script,
+                        'exec' => explode("\n", $script),
                     ],
                 ];
             }
         }
+
+        return $events;
     }
+
 
     protected function processRequests(): array
     {
@@ -89,16 +120,17 @@ final class PostmanExporter extends AbstractExporter
         return $this->processNestedGroups($this->requests->groupByNestedPath());
     }
 
-    protected function processNestedGroups(array $groups, string $parentPath = ''): array
+    protected function processNestedGroups(array $groups): array
     {
         $items = [];
 
         foreach ($groups as $segment => $data) {
-            $currentPath = $parentPath . ($parentPath ? '/' : '') . $segment;
-
             $folder = [
+                '_postman_id' => Uuid::uuid4()->toString(),
                 'name' => $segment,
-                'item' => []
+                'description' => sprintf('Endpoints for %s', $segment),
+                'item' => [],
+                'protocolProfileBehavior' => $this->getProtocolProfileBehavior(),
             ];
 
             // Add requests to current folder
@@ -106,11 +138,11 @@ final class PostmanExporter extends AbstractExporter
                 $folder['item'][] = $this->createRequestItem($request);
             }
 
-            // Process nested folders
+            // Process nested folders recursively
             if (!empty($data['children'])) {
                 $folder['item'] = array_merge(
                     $folder['item'],
-                    $this->processNestedGroups($data['children'], $currentPath)
+                    $this->processNestedGroups($data['children'])
                 );
             }
 
@@ -122,19 +154,101 @@ final class PostmanExporter extends AbstractExporter
 
     protected function createRequestItem(Request $request): array
     {
-        return [
-            'name' => $request->name(
-                $this->config->get('api-postman.structured') &&
-                $this->config->get('api-postman.crud_folders')
-            ),
+        $item = [
+            '_postman_id' => $request->id->toString(),
+            'name' => $request->name($this->config->get('api-postman.crud_folders')),
             'request' => [
-                'method' => $request->method,
+                'method' => $request->method->value,
                 'header' => $request->headers->formatted(),
-                'url' => $request->url,
+                'url' => $this->formatUrl($request),
                 'description' => $request->description,
-                'body' => $request->body,
+                'auth' => $this->getRequestAuth($request),
+                'body' => $this->formatBody($request),
             ],
             'response' => [],
+            'protocolProfileBehavior' => $this->getProtocolProfileBehavior(),
         ];
+
+        // Add example responses if available
+        if ($request->responses) {
+            $item['response'] = array_map(
+                fn($response) => $this->formatResponse($response),
+                $request->responses
+            );
+        }
+
+        return $item;
+    }
+
+    protected function formatUrl(Request $request): array
+    {
+        $url = $request->url->array();
+
+        // Add protocol if missing
+        if (!isset($url['protocol'])) {
+            $url['protocol'] = parse_url($this->config->get('api-postman.base_url'), PHP_URL_SCHEME) ?? 'http';
+        }
+
+        return $url;
+    }
+
+    protected function formatBody(Request $request): ?array
+    {
+        if (!$request->body) {
+            return null;
+        }
+
+        $body = $request->body;
+
+        // Add additional metadata
+        if ($body['mode'] === 'raw' && !isset($body['options'])) {
+            $body['options'] = [
+                'raw' => [
+                    'language' => 'json'
+                ]
+            ];
+        }
+
+        return $body;
+    }
+
+    protected function formatResponse(array $response): array
+    {
+        return [
+            'name' => $response['name'] ?? 'Example Response',
+            'originalRequest' => $response['request'] ?? null,
+            'status' => $response['status'] ?? 'OK',
+            'code' => $response['code'] ?? 200,
+            '_postman_previewlanguage' => 'json',
+            'header' => $response['headers'] ?? [],
+            'cookie' => [],
+            'body' => $response['body'] ?? ''
+        ];
+    }
+    protected function getRequestAuth(Request $request): ?array
+    {
+        // Allow per-request auth override
+        if ($request->authentication) {
+            return [
+                'type' => $request->authentication['type'],
+                $request->authentication['type'] => [
+                    [
+                        'key' => 'token',
+                        'value' => $request->authentication['token'],
+                        'type' => 'string'
+                    ]
+                ]
+            ];
+        }
+
+        return null;
+    }
+    protected function getProtocolProfileBehavior(): array
+    {
+        return array_filter([
+            'disableBodyPruning' => $this->config->get('api-postman.protocol_profile_behavior.disable_body_pruning', false),
+            'followRedirects' => true,
+            'strictSSL' => true,
+        ]);
     }
 }

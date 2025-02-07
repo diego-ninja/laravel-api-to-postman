@@ -3,7 +3,6 @@
 namespace AndreasElia\PostmanGenerator;
 
 use AndreasElia\PostmanGenerator\Commands\ExportCollectionCommand;
-use AndreasElia\PostmanGenerator\Exporters\BrunoExporter;
 use AndreasElia\PostmanGenerator\Exporters\InsomniaExporter;
 use AndreasElia\PostmanGenerator\Exporters\PostmanExporter;
 use AndreasElia\PostmanGenerator\Processors\RouteProcessor;
@@ -48,11 +47,5 @@ class CollectionGeneratorServiceProvider extends ServiceProvider
             $app['config'],
             $app->make(RouteProcessor::class),
         ));
-
-        $this->app->bind(BrunoExporter::class, fn($app) => new BrunoExporter(
-            $app['config'],
-            $app->make(RouteProcessor::class),
-        ));
-
     }
 }

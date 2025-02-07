@@ -2,11 +2,14 @@
 
 namespace AndreasElia\PostmanGenerator\Tests\Fixtures;
 
+use AndreasElia\PostmanGenerator\Attributes\Collection;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 
+#[Collection(name: 'Audit Log', description: 'This is log management collection', group: 'Logs')]
 class AuditLogController extends Controller
 {
+    #[\AndreasElia\PostmanGenerator\Attributes\Request(name: 'List Audit Logs', description: 'List all audit logs')]
     public function index(): void {}
 
     public function store(Request $request): void {}

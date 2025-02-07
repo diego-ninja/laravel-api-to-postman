@@ -13,21 +13,17 @@ final class RequestCollection extends Collection
         return new self(array_map(fn(array $request) => Request::from($request), $requests));
     }
 
-    public function groupByGroup(): RequestCollection
-    {
-        return $this->groupBy(fn(Request $request) => $request->group());
-    }
-
     public function groupByNestedPath(): array
     {
         $grouped = [];
 
+        /** @var Request $request */
         foreach ($this as $request) {
             if ($request->method === Method::HEAD) {
                 continue;
             }
 
-            $path = $this->getRequestPath($request);
+            $path = $request->getNestedPath();
             $current = &$grouped;
 
             for ($i = 0; $i < count($path) - 1; $i++) {
@@ -46,20 +42,5 @@ final class RequestCollection extends Collection
         }
 
         return $grouped;
-    }
-
-    private function getRequestPath(Request $request): array
-    {
-        $segments = array_values(array_filter(explode('/', trim($request->uri, '/'))));
-        $path = [];
-
-        foreach ($segments as $segment) {
-            if (str_starts_with($segment, ':') || str_starts_with($segment, '{')) {
-                continue;
-            }
-            $path[] = $segment;
-        }
-
-        return $path;
     }
 }
